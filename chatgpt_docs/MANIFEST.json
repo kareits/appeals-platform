@@ -1,0 +1,114 @@
+[
+  {
+    "path": "CLAUDE.md",
+    "size": 3856
+  },
+  {
+    "path": "README.md",
+    "size": 2135
+  },
+  {
+    "path": "contracts/README.md",
+    "size": 342
+  },
+  {
+    "path": "docs/00_MASTER_SPEC.md",
+    "size": 3534
+  },
+  {
+    "path": "docs/01_REGULATORY_AND_BUSINESS_REQUIREMENTS.md",
+    "size": 3316
+  },
+  {
+    "path": "docs/02_DATA_DICTIONARY.md",
+    "size": 3596
+  },
+  {
+    "path": "docs/03_ARCHITECTURE.md",
+    "size": 2507
+  },
+  {
+    "path": "docs/04_FLOWABLE_PROCESS.md",
+    "size": 2590
+  },
+  {
+    "path": "docs/05_API_AND_EVENT_CONTRACTS.md",
+    "size": 1885
+  },
+  {
+    "path": "docs/06_SECURITY_RETENTION_AUDIT.md",
+    "size": 1939
+  },
+  {
+    "path": "docs/07_AI_READY_ARCHITECTURE.md",
+    "size": 2220
+  },
+  {
+    "path": "docs/08_TEST_AND_ACCEPTANCE_STRATEGY.md",
+    "size": 952
+  },
+  {
+    "path": "orchestration/README.md",
+    "size": 287
+  },
+  {
+    "path": "services/BFF_SERVICE.md",
+    "size": 873
+  },
+  {
+    "path": "services/DOCUMENT_SERVICE.md",
+    "size": 1131
+  },
+  {
+    "path": "services/IAM_SERVICE.md",
+    "size": 841
+  },
+  {
+    "path": "services/INTEGRATION_SERVICE.md",
+    "size": 815
+  },
+  {
+    "path": "services/MAILBOX_SERVICE.md",
+    "size": 1077
+  },
+  {
+    "path": "services/NOTIFICATION_SERVICE.md",
+    "size": 851
+  },
+  {
+    "path": "services/PROCESS_ADAPTER.md",
+    "size": 1071
+  },
+  {
+    "path": "services/TICKET_SERVICE.md",
+    "size": 1603
+  },
+  {
+    "path": "tasks/TASK_00_REPOSITORY_BOOTSTRAP.md",
+    "size": 853
+  },
+  {
+    "path": "tasks/TASK_01_TICKET_AND_MANUAL_WORKFLOW.md",
+    "size": 910
+  },
+  {
+    "path": "tasks/TASK_02_FLOWABLE_INTEGRATION.md",
+    "size": 635
+  },
+  {
+    "path": "tasks/TASK_03_DOCUMENTS.md",
+    "size": 647
+  },
+  {
+    "path": "tasks/TASK_04_EXCHANGE_EMAIL.md",
+    "size": 678
+  },
+  {
+    "path": "tasks/TASK_05_REPORTING_AND_AUDIT.md",
+    "size": 512
+  },
+  {
+    "path": "tasks/TASK_06_PRODUCTION_READINESS.md",
+    "size": 525
+  }
+]

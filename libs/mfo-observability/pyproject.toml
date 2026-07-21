@@ -1,0 +1,16 @@
+# Shared observability library: structured logging, correlation IDs, metrics, and health checks.
+# Scope is bounded by ADR-007: no domain models, ORM models, business events, or permission rules.
+
+[project]
+name = "mfo-observability"
+version = "0.1.0"
+description = "Observability primitives (logging, correlation, metrics, health) shared across services."
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mfo_observability"]

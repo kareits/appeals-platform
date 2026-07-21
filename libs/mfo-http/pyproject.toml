@@ -1,0 +1,20 @@
+# Shared HTTP support library: correlation middleware, an HTTP client wrapper, and RFC 7807
+# Problem Details error handling. Scope is bounded by ADR-007 (no domain/business logic).
+
+[project]
+name = "mfo-http"
+version = "0.1.0"
+description = "HTTP support (client, correlation middleware, RFC 7807 errors) shared across services."
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "starlette>=0.37",
+    "mfo-observability",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mfo_http"]
