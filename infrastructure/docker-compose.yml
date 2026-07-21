@@ -101,6 +101,32 @@ services:
     networks:
       - backend
 
+  process_adapter:
+    build:
+      context: ..
+      dockerfile: services/process_adapter/Dockerfile
+    environment:
+      PA_ENVIRONMENT: docker
+      PA_FLOWABLE_BASE_URL: http://flowable:8080/flowable-rest/service
+      PA_FLOWABLE_USERNAME: rest-admin
+      PA_FLOWABLE_PASSWORD: test
+    depends_on:
+      flowable:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # No published ports: reached only on the internal network (and via the future BFF).
+    networks:
+      - backend
+
   reverse-proxy:
     image: caddy:2.8
     depends_on:

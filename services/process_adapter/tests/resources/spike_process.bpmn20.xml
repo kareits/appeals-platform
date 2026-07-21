@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Technical spike process for TASK_00D. It has no business meaning: it exercises a user task, a
+  short timer, and a message catch event so the Process Adapter can validate the full Flowable
+  loop. Real business processes live in orchestration/ (EP-3).
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://mfo.appeals/spike">
+
+  <message id="spikeMessageMsg" name="spikeMessage"/>
+
+  <process id="spikeProcess" name="Flowable spike process" isExecutable="true">
+    <startEvent id="start"/>
+    <sequenceFlow id="flowStartToTask" sourceRef="start" targetRef="spikeUserTask"/>
+
+    <userTask id="spikeUserTask" name="Spike user task"/>
+    <sequenceFlow id="flowTaskToTimer" sourceRef="spikeUserTask" targetRef="spikeTimer"/>
+
+    <intermediateCatchEvent id="spikeTimer">
+      <timerEventDefinition>
+        <timeDuration>PT2S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <sequenceFlow id="flowTimerToMessage" sourceRef="spikeTimer" targetRef="spikeMessage"/>
+
+    <intermediateCatchEvent id="spikeMessage">
+      <messageEventDefinition messageRef="spikeMessageMsg"/>
+    </intermediateCatchEvent>
+    <sequenceFlow id="flowMessageToEnd" sourceRef="spikeMessage" targetRef="end"/>
+
+    <endEvent id="end"/>
+  </process>
+</definitions>

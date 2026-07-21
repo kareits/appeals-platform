@@ -1,0 +1,10 @@
+# Local-only override that publishes the Flowable REST port so the TASK_00D integration tests can
+# run from the host. Flowable stays internal in the base compose file; use this override only for
+# the spike:
+#   docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.spike.yml \
+#     up -d --wait postgres flowable
+
+services:
+  flowable:
+    ports:
+      - "${FLOWABLE_PORT:-8081}:8080"

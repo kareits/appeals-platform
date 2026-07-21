@@ -13,6 +13,7 @@ members = [
     "mfo-http",
     "mfo-observability",
     "mfo-testing",
+    "process-adapter",
 ]
 
 [[package]]
@@ -680,6 +681,39 @@ sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
 ]
+
+[[package]]
+name = "process-adapter"
+version = "0.1.0"
+source = { editable = "services/process_adapter" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "mfo-http" },
+    { name = "mfo-observability" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mfo-testing" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "mfo-http", editable = "libs/mfo-http" },
+    { name = "mfo-observability", editable = "libs/mfo-observability" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydantic-settings", specifier = ">=2.3" },
+    { name = "uvicorn", specifier = ">=0.30" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "mfo-testing", editable = "libs/mfo-testing" }]
 
 [[package]]
 name = "py"

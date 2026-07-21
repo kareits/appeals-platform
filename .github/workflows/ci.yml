@@ -60,3 +60,39 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose -f infrastructure/docker-compose.yml down -v
+
+  flowable-spike:
+    name: Flowable spike (integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.30"
+          enable-cache: true
+
+      - name: Start PostgreSQL and Flowable (published)
+        run: >-
+          docker compose
+          -f infrastructure/docker-compose.yml
+          -f infrastructure/docker-compose.spike.yml
+          up -d --wait --wait-timeout 300 postgres flowable
+
+      - name: Run the Flowable integration spike
+        env:
+          PA_FLOWABLE_BASE_URL: http://localhost:8081/flowable-rest/service
+          PA_FLOWABLE_USERNAME: rest-admin
+          PA_FLOWABLE_PASSWORD: test
+        run: |
+          uv sync --all-packages --dev
+          uv run pytest services/process_adapter -v
+
+      - name: Stop the stack
+        if: always()
+        run: >-
+          docker compose
+          -f infrastructure/docker-compose.yml
+          -f infrastructure/docker-compose.spike.yml
+          down -v

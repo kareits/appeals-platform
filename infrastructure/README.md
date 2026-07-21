@@ -10,6 +10,7 @@ Local development stack (TASK_00B, EP-0) defined in [`docker-compose.yml`](docke
 | `rabbitmq` | rabbitmq:3.13-management | 15672 (management UI, dev) | AMQP stays internal. |
 | `flowable` | flowable/flowable-rest:7.1.0 | none | Own database; reachable only on the internal network. |
 | `demo_service` | built from `services/demo_service/Dockerfile` | none | Reached only via the reverse proxy. |
+| `process_adapter` | built from `services/process_adapter/Dockerfile` | none | Adapter over Flowable (spike, TASK_00D); internal only. |
 | `reverse-proxy` | caddy:2.8 | `HTTP_PORT` (default 8080) → 80 | The only service that publishes a host port. |
 
 Databases created on first init (see `postgres/init/01-create-databases.sh`): `demo_service`
@@ -23,7 +24,13 @@ make ps          # service status
 make migrate     # apply demo-service migrations against the compose PostgreSQL
 make logs        # follow logs
 make down        # stop and remove containers
+make spike       # publish Flowable and run the Process Adapter integration spike (TASK_00D)
+make spike-down  # stop the spike stack
 ```
+
+The `spike` target uses [`docker-compose.spike.yml`](docker-compose.spike.yml), a local-only
+override that publishes the Flowable REST port (default 8081) so the integration tests can run from
+the host. Flowable stays internal in the base compose file.
 
 Then check the demo service through the proxy:
 
