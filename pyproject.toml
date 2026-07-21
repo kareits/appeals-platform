@@ -34,13 +34,15 @@ dev = [
     "interrogate>=1.7",
     "httpx>=0.27",
     "aiosqlite>=0.20",
+    "jsonschema>=4.20",
+    "types-jsonschema>=4.20",
 ]
 
 # --- Ruff: linting, import sorting, and docstring enforcement (ADR-015) ---
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-src = ["libs", "services", "tools"]
+src = ["libs", "services", "tools", "contracts"]
 extend-exclude = ["chatgpt_docs", ".venv"]
 
 [tool.ruff.lint]
@@ -58,7 +60,7 @@ python_version = "3.12"
 strict = true
 namespace_packages = true
 explicit_package_bases = true
-files = ["libs", "services", "tools"]
+files = ["libs", "services", "tools", "contracts"]
 mypy_path = [
     "libs/mfo-observability/src",
     "libs/mfo-http/src",
@@ -83,4 +85,4 @@ exclude = ["chatgpt_docs", ".venv", "**/build", "**/dist"]
 # --- pytest ---
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["libs", "services"]
+testpaths = ["libs", "services", "contracts"]

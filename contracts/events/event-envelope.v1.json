@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.appeals-platform.local/events/event-envelope.v1.json",
+  "title": "Event envelope v1",
+  "description": "Common envelope wrapping every domain event published on RabbitMQ. The payload schema is owned by the producing service. Canonical event namespaces are defined in ADR-006 / ADR-0004.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "correlationId",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier of this event instance; used by consumers for idempotency."
+    },
+    "eventType": {
+      "type": "string",
+      "pattern": "^(mail|ticket|response|process|document|notification)\\.[a-z0-9_]+\\.v[0-9]+$",
+      "description": "Canonical event type as <namespace>.<name>.v<version>. Only the mail, ticket, response, process, document, and notification namespaces are allowed (ADR-006); email.* and response.returned are forbidden."
+    },
+    "eventVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Payload schema version; matches the version suffix in eventType."
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp (ISO-8601) when the event occurred."
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of the producing service (for example, ticket-service)."
+    },
+    "correlationId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Correlation identifier tying related events and requests together."
+    },
+    "causationId": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Identifier of the event or command that caused this event, or null if none."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event-specific body. Its schema is defined and versioned by the producing service."
+    }
+  }
+}

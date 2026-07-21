@@ -84,8 +84,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
   response lifecycle — `response.*`; deadlines — `ticket.deadline_breached.v1` (plus a warning as
   `ticket.deadline_warning.v1`, to be confirmed in the event catalog). Notification subscribes to
   canonical events instead of `customer.reply_received`/`response.returned`.
-- **Status:** accepted. **Full ADR:** yes — `ADR-EVENT-CATALOG` at TASK_00C (single catalog +
-  JSON Schema).
+- **Status:** accepted. **Full ADR:** yes — [`docs/adr/ADR-0004-event-catalog.md`](adr/ADR-0004-event-catalog.md) (single catalog + envelope JSON Schema).
 
 ## ADR-007. Shared-library boundaries
 
@@ -212,7 +211,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-0001 (shared-libraries) | `libs/` boundaries (observability/http/testing) | TASK_00A | Written |
 | ADR-0002 (language-policy) | English-only code/docs, Google docstrings, doc coverage | TASK_00A | Written |
 | ADR-0003 (vendor-neutral-naming) | No `solva` in code identifiers; `mfo` prefix | TASK_00A | Written |
-| ADR-EVENT-CATALOG | Single event catalog + JSON Schema, versioning | TASK_00C | Pending |
+| ADR-0004 (event-catalog) | Single event catalog + envelope JSON Schema, versioning | TASK_00C | Written |
 | ADR-SLA-CALENDAR | SLA policy + KZ business calendar, due_at computation | TASK_01C / TASK_02 |
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
