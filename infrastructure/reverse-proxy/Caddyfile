@@ -1,0 +1,7 @@
+# Reverse proxy configuration.
+# Publishes only the demo service. Flowable and RabbitMQ AMQP are intentionally not proxied and
+# remain on the internal network.
+
+:80 {
+	reverse_proxy demo_service:8000
+}

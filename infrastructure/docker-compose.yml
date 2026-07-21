@@ -1,0 +1,123 @@
+# Local development infrastructure for the MFO Appeals Platform (TASK_00B).
+#
+# Topology:
+#   - one PostgreSQL cluster with separate databases and users per service (ADR-004);
+#   - RabbitMQ for messaging;
+#   - Flowable REST on its own database, reachable only on the internal network;
+#   - the demo service, reachable only via the reverse proxy;
+#   - Caddy reverse proxy, the only service that publishes a host port.
+#
+# Dev credentials below are non-secret placeholders with inline defaults so `docker compose up`
+# works out of the box. Override them via an .env file (see .env.example). Never commit real
+# secrets.
+
+name: appeals-platform
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      DEMO_DB_PASSWORD: ${DEMO_DB_PASSWORD:-demo}
+      FLOWABLE_DB_PASSWORD: ${FLOWABLE_DB_PASSWORD:-flowable}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - backend
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      # Management UI on the host for local development only; AMQP stays internal.
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - backend
+
+  flowable:
+    image: flowable/flowable-rest:7.1.0
+    environment:
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flowable
+      SPRING_DATASOURCE_USERNAME: flowable
+      SPRING_DATASOURCE_PASSWORD: ${FLOWABLE_DB_PASSWORD:-flowable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Flowable is up once its HTTP port accepts connections. A port-open check (nc) is used
+      # because the image ships no bash/curl and REST endpoints are auth-protected.
+      test: ["CMD", "nc", "-z", "localhost", "8080"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    # No published ports: Flowable is reachable only on the internal network (dev/private).
+    networks:
+      - backend
+
+  demo_service:
+    build:
+      context: ..
+      dockerfile: services/demo_service/Dockerfile
+    environment:
+      DEMO_ENVIRONMENT: docker
+      DEMO_DATABASE_URL: postgresql+asyncpg://demo:${DEMO_DB_PASSWORD:-demo}@postgres:5432/demo_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      # Placeholder persistent file volume for the future Document Service.
+      - file-data:/var/lib/appeals/files
+    networks:
+      - backend
+
+  reverse-proxy:
+    image: caddy:2.8
+    depends_on:
+      demo_service:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - backend
+
+volumes:
+  pgdata:
+  rabbitmq-data:
+  file-data:
+
+networks:
+  backend:
+    driver: bridge

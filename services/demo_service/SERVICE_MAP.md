@@ -29,7 +29,8 @@ None.
 
 ## External dependencies
 
-- PostgreSQL (production; SQLite for local/tests until TASK_00B).
+- PostgreSQL — used in the compose stack (`postgresql+asyncpg://…`); SQLite for local (non-Docker)
+  runs and unit tests.
 
 ## Failure behavior
 
@@ -51,5 +52,5 @@ Alembic; latest revision `0001` creates `bootstrap_marker`. Apply with
 
 ## Known limitations
 
-- SQLite is used locally; PostgreSQL and Docker Compose wiring arrive in TASK_00B.
+- SQLite is used for local (non-Docker) runs and unit tests; the compose stack uses PostgreSQL.
 - No authentication or business logic (out of scope for the bootstrap).

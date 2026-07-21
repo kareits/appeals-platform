@@ -3,9 +3,10 @@
 # is not on PATH. Override with `make UV=uv <target>` if you prefer the binary.
 
 UV ?= python -m uv
+COMPOSE ?= docker compose -f infrastructure/docker-compose.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help install lint format type test docstrings docs-lang migrate check up down
+.PHONY: help install lint format type test docstrings docs-lang migrate check up down logs ps
 
 help: ## Show available targets.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -33,11 +34,17 @@ docs-lang: ## Verify technical Markdown files are written in English (ADR-015).
 
 check: lint type test docstrings docs-lang ## Run all quality gates.
 
-up: ## Start the local infrastructure (implemented in TASK_00B).
-	@echo "Docker Compose infrastructure is delivered in TASK_00B (EP-0)."
+up: ## Build and start the local infrastructure in the background.
+	$(COMPOSE) up --build -d
 
-down: ## Stop the local infrastructure (implemented in TASK_00B).
-	@echo "Docker Compose infrastructure is delivered in TASK_00B (EP-0)."
+down: ## Stop the local infrastructure and remove containers.
+	$(COMPOSE) down
 
-migrate: ## Apply demo-service database migrations to the latest revision.
-	cd services/demo_service && $(UV) run alembic upgrade head
+logs: ## Follow logs from all infrastructure services.
+	$(COMPOSE) logs -f
+
+ps: ## Show the status of infrastructure services.
+	$(COMPOSE) ps
+
+migrate: ## Apply demo-service database migrations against the compose PostgreSQL.
+	$(COMPOSE) run --rm -w /app/services/demo_service demo_service alembic upgrade head

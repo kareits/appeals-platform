@@ -1,0 +1,17 @@
+# Keep the Docker build context small and free of local artifacts.
+.git
+.venv
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+!.env.example
+apps
+chatgpt_docs
+docs
+tasks

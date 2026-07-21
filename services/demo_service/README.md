@@ -11,17 +11,30 @@ service.
 - Structured logging, correlation-ID middleware, and RFC 7807 error handling.
 - Health endpoints: `GET /health/live` and `GET /health/ready` (checks database connectivity).
 - Async SQLAlchemy 2 persistence and an Alembic migration.
+- A multi-stage `Dockerfile` (uv build) used by the local compose stack.
 
 ## Local development
 
 ```bash
-uv run uvicorn demo_service.main:app --reload   # run the service
+uv run uvicorn demo_service.main:app --reload   # run the service (SQLite)
 uv run pytest services/demo_service             # run its tests
-cd services/demo_service && uv run alembic upgrade head   # apply migrations
+cd services/demo_service && uv run alembic upgrade head   # apply migrations (SQLite)
 ```
 
-For local runs and tests the service uses an embedded SQLite backend
-(`DEMO_DATABASE_URL=sqlite+aiosqlite:///./demo_service.db`). PostgreSQL wiring arrives in TASK_00B.
+For local (non-Docker) runs and unit tests the service uses an embedded SQLite backend
+(`DEMO_DATABASE_URL=sqlite+aiosqlite:///./demo_service.db`).
+
+## Running in the compose stack
+
+In the compose stack (`infrastructure/docker-compose.yml`) the service is built from its
+`Dockerfile`, connects to PostgreSQL, and is reached through the reverse proxy. See
+[`infrastructure/README.md`](../../infrastructure/README.md).
+
+```bash
+make up                                  # build and start the stack
+make migrate                             # apply migrations against the compose PostgreSQL
+curl http://localhost:8080/health/ready  # via the reverse proxy
+```
 
 ## Configuration
 

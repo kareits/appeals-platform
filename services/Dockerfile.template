@@ -1,0 +1,42 @@
+# Reference Dockerfile template for MFO Appeals Platform services.
+# Copy to services/<service>/Dockerfile and replace SERVICE_PACKAGE / SERVICE_DIST accordingly.
+# Build from the repository root so the uv workspace and shared libraries are in the context:
+#   docker build -f services/<service>/Dockerfile -t <service> .
+#
+# Placeholders:
+#   SERVICE_DIST     distribution name from pyproject (for example, demo-service)
+#   SERVICE_PACKAGE  import package name (for example, demo_service)
+#   SERVICE_DIRNAME  directory under services/ (for example, demo_service)
+
+FROM python:3.12-slim AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /bin/uv
+
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+COPY libs/ libs/
+COPY services/SERVICE_DIRNAME/ services/SERVICE_DIRNAME/
+
+RUN uv sync --package SERVICE_DIST --frozen --no-dev
+
+FROM python:3.12-slim AS runtime
+
+RUN useradd --create-home --uid 1000 appuser
+
+WORKDIR /app
+
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/libs /app/libs
+COPY --from=builder /app/services/SERVICE_DIRNAME /app/services/SERVICE_DIRNAME
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
+
+USER appuser
+EXPOSE 8000
+
+CMD ["uvicorn", "SERVICE_PACKAGE.main:app", "--host", "0.0.0.0", "--port", "8000"]
