@@ -26,6 +26,7 @@ ACTION_CLASSIFIED = "ticket.classified"
 ACTION_DECISION_RECORDED = "ticket.decision_recorded"
 ACTION_CLOSED = "ticket.closed"
 ACTION_LEGAL_HOLD_SET = "ticket.legal_hold_set"
+ACTION_COMMENT_ADDED = "ticket.comment_added"
 
 
 class AuditRepository:

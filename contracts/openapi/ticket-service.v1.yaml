@@ -345,17 +345,17 @@ components:
       required: [applicantType, dataSource]
       properties:
         applicantType: {type: string, enum: [CONSUMER, REPRESENTATIVE], description: Party role.}
-        fullName: {type: [string, "null"], description: Full name.}
+        fullName: {type: [string, "null"], minLength: 1, maxLength: 512, description: Full name.}
         identifierType: {type: [string, "null"], enum: [IIN, BIN, null], description: Identifier kind.}
-        identifierValue: {type: [string, "null"], description: National identifier (sensitive; masked in outputs).}
-        email: {type: [string, "null"], description: Contact email.}
-        phone: {type: [string, "null"], description: Contact phone.}
-        genderCode: {type: [string, "null"], description: Gender code.}
+        identifierValue: {type: [string, "null"], minLength: 1, maxLength: 64, description: National identifier (sensitive; masked in outputs).}
+        email: {type: [string, "null"], minLength: 1, maxLength: 512, description: Contact email.}
+        phone: {type: [string, "null"], minLength: 1, maxLength: 64, description: Contact phone.}
+        genderCode: {type: [string, "null"], minLength: 1, maxLength: 64, description: Gender code.}
         birthDate: {type: [string, "null"], format: date, description: Date of birth.}
         age: {type: [integer, "null"], description: Age in years.}
-        regionCode: {type: [string, "null"], description: Region code.}
+        regionCode: {type: [string, "null"], minLength: 1, maxLength: 64, description: Region code.}
         dataSource: {type: string, enum: [APPEAL, CORE_SYSTEM, MANUAL], description: Provenance of the data.}
-        representativeBasis: {type: [string, "null"], description: Legal basis for a representative.}
+        representativeBasis: {type: [string, "null"], minLength: 1, maxLength: 512, description: Legal basis for a representative.}
     CreateTicketRequest:
       type: object
       additionalProperties: false
@@ -364,13 +364,13 @@ components:
          priorityCode, applicant]
       properties:
         receivedAt: {type: string, format: date-time, description: When the appeal was received.}
-        sourceChannelCode: {type: string, description: Intake channel code.}
-        subject: {type: string, minLength: 1, description: Short subject line.}
+        sourceChannelCode: {type: string, minLength: 1, maxLength: 64, description: Intake channel code.}
+        subject: {type: string, minLength: 1, maxLength: 512, description: Short subject line.}
         description: {type: string, minLength: 1, description: Full appeal text.}
-        productCode: {type: string, description: Credit-product code.}
-        classifierCode: {type: string, description: Question-classifier code.}
-        priorityCode: {type: string, description: Priority code.}
-        contractNumber: {type: [string, "null"], description: Related credit-contract number.}
+        productCode: {type: string, minLength: 1, maxLength: 64, description: Credit-product code.}
+        classifierCode: {type: string, minLength: 1, maxLength: 64, description: Question-classifier code.}
+        priorityCode: {type: string, minLength: 1, maxLength: 64, description: Priority code.}
+        contractNumber: {type: [string, "null"], minLength: 1, maxLength: 64, description: Related credit-contract number.}
         applicant: {$ref: '#/components/schemas/ApplicantInput'}
         representative:
           oneOf:
@@ -384,27 +384,27 @@ components:
       required: [expectedVersion]
       properties:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
-        subject: {type: string, minLength: 1, description: New subject line.}
-        description: {type: string, minLength: 1, description: New appeal text.}
-        sourceChannelCode: {type: string, description: New intake channel code.}
-        contractNumber: {type: [string, "null"], description: New related contract number (null clears it).}
+        subject: {type: [string, "null"], minLength: 1, maxLength: 512, description: New subject line.}
+        description: {type: [string, "null"], minLength: 1, description: New appeal text.}
+        sourceChannelCode: {type: [string, "null"], minLength: 1, maxLength: 64, description: New intake channel code.}
+        contractNumber: {type: [string, "null"], minLength: 1, maxLength: 64, description: New related contract number (null clears it).}
     ClassifyRequest:
       type: object
       additionalProperties: false
       required: [expectedVersion, productCode, classifierCode, priorityCode]
       properties:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
-        productCode: {type: string, description: Credit-product code.}
-        classifierCode: {type: string, description: Question-classifier code.}
-        priorityCode: {type: string, description: Priority code.}
+        productCode: {type: string, minLength: 1, maxLength: 64, description: Credit-product code.}
+        classifierCode: {type: string, minLength: 1, maxLength: 64, description: Question-classifier code.}
+        priorityCode: {type: string, minLength: 1, maxLength: 64, description: Priority code.}
     RecordDecisionRequest:
       type: object
       additionalProperties: false
       required: [expectedVersion, decisionCode, decisionText, decisionBy]
       properties:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
-        decisionCode: {type: string, description: Decision code (dictionary 'decision').}
-        decisionSummary: {type: [string, "null"], description: Short decision summary.}
+        decisionCode: {type: string, minLength: 1, maxLength: 64, description: Decision code (dictionary 'decision').}
+        decisionSummary: {type: [string, "null"], minLength: 1, maxLength: 512, description: Short decision summary.}
         decisionText: {type: string, minLength: 1, description: Full decision text.}
         decisionBy: {type: string, format: uuid, description: Employee recording the decision.}
     CloseTicketRequest:
@@ -416,9 +416,10 @@ components:
       required: [expectedVersion, closureReasonCode]
       properties:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
-        closureReasonCode: {type: string, description: Closure-reason code (dictionary 'closure_reason').}
+        closureReasonCode: {type: string, minLength: 1, maxLength: 64, description: Closure-reason code (dictionary 'closure_reason').}
         responseSentAt: {type: [string, "null"], format: date-time, description: When the response was sent, if any.}
-        noResponseReason: {type: [string, "null"], description: Justification when no response was sent.}
+        noResponseReason: {type: [string, "null"], minLength: 1, maxLength: 512, description: Justification when no response was sent.}
+        actorId: {type: [string, "null"], format: uuid, description: Actor performing the closure (interim caller-supplied; trusted actor with IAM in TASK_01D).}
     LegalHoldRequest:
       type: object
       additionalProperties: false
@@ -427,6 +428,7 @@ components:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
         legalHold: {type: boolean, description: Whether the ticket is under legal hold.}
         reason: {type: [string, "null"], description: Optional reason recorded in the audit log.}
+        actorId: {type: [string, "null"], format: uuid, description: Actor performing the change (interim caller-supplied; trusted actor with IAM in TASK_01D).}
     CommentRequest:
       type: object
       additionalProperties: false

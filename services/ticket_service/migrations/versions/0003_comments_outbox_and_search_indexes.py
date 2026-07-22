@@ -11,6 +11,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from ticket_service.infrastructure.migration_guards import abort_if_tables_not_empty
 
 revision: str = "0003"
 down_revision: str | None = "0002"
@@ -97,9 +98,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Revert the migration.
 
-    Drops only structures introduced here; no regulatory appeal data is removed beyond the
-    (empty-at-this-revision) comment/outbox tables (root ``CLAUDE.md``).
+    Destructive: drops ``ticket_comment``/``outbox_event`` and removes ticket columns. The guard
+    aborts if those tables or ``ticket`` hold rows, so comments, unpublished events, and ticket data
+    are never deleted by a rollback (root ``CLAUDE.md``, docs/01, docs/06).
     """
+    abort_if_tables_not_empty("ticket", "ticket_comment", "outbox_event")
     op.drop_index("ix_outbox_event_published_at", table_name="outbox_event")
     op.drop_table("outbox_event")
     op.drop_index("ix_ticket_comment_ticket_id", table_name="ticket_comment")

@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.config import Config
+from ticket_service.infrastructure.migration_guards import RegulatoryDataPresentError
+from ticket_service.infrastructure.reference_seed import SEED_ENTRIES
 
 
 def _make_config(db_path: Path) -> Config:
@@ -96,6 +100,44 @@ def test_migrations_downgrade_removes_schema(tmp_path: Path) -> None:
         "audit_log",
     ):
         assert not _table_exists(db_path, table)
+
+
+def test_runtime_catalog_matches_migration_snapshot(tmp_path: Path) -> None:
+    """The runtime reference catalog matches the immutable migration seed (CRR-HIGH-001)."""
+    db_path = tmp_path / "migration.db"
+    command.upgrade(_make_config(db_path), "head")
+
+    with sqlite3.connect(db_path) as connection:
+        seeded = set(
+            connection.execute(
+                "SELECT dictionary_type, code FROM dictionary_entry WHERE is_active = 1"
+            ).fetchall()
+        )
+
+    runtime = {(entry["dictionary_type"], entry["code"]) for entry in SEED_ENTRIES}
+    assert seeded == runtime
+
+
+def test_downgrade_is_blocked_when_protected_data_exists(tmp_path: Path) -> None:
+    """A destructive downgrade aborts when regulatory/audit data is present (CR-BLOCKER-001)."""
+    db_path = tmp_path / "migration.db"
+    config = _make_config(db_path)
+    command.upgrade(config, "head")
+
+    # Seed one audit-log row (checked by the first downgrade to run, 0004).
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "INSERT INTO audit_log (id, entity_type, entity_id, action) VALUES (?, ?, ?, ?)",
+            (str(uuid.uuid4()), "ticket", str(uuid.uuid4()), "ticket.registered"),
+        )
+        connection.commit()
+
+    with pytest.raises(RegulatoryDataPresentError):
+        command.downgrade(config, "base")
+
+    # The schema and the protected row survive the aborted rollback.
+    assert _table_exists(db_path, "audit_log")
+    assert _count_rows(db_path, "audit_log") == 1
 
 
 def test_seed_downgrade_is_scoped_to_dictionaries(tmp_path: Path) -> None:

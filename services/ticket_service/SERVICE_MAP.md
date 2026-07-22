@@ -82,10 +82,11 @@ Alembic; latest revision `0004`.
 - **migration:** `0001` core tables; `0003` comments, outbox, `contract_number`/`idempotency_key`,
   and search indexes; `0004` closure/SLA ticket columns and `audit_log`.
 - **backfill:** `0002` seeds draft reference dictionaries (Q-A1).
-- **rollback:** `downgrade base` drops the schema; `downgrade 0001` removes only seed rows; no
-  regulatory data is deleted.
-- **validation:** `test_migration` (apply/seed/rollback incl. `ticket_comment`/`outbox_event`/
-  `audit_log`) and `test_models` (unique number, nullable demographics, optimistic locking).
+- **rollback:** downgrades are destructive and guarded — dropping regulatory/audit tables or their
+  columns aborts (`RegulatoryDataPresentError`) when protected tables hold rows (root `CLAUDE.md`,
+  docs/01, docs/06); reference-data rollback (`downgrade 0001`) is unconditionally allowed.
+- **validation:** `test_migration` (apply/seed/rollback, guard blocks downgrade on seeded data) and
+  `test_models` (unique number, nullable demographics, optimistic locking).
 
 ## Testing
 

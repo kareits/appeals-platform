@@ -12,6 +12,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 from ticket_service.domain.enums import ApplicantType, DataSource, IdentifierType
+from ticket_service.infrastructure.migration_guards import abort_if_tables_not_empty
 
 revision: str = "0001"
 down_revision: str | None = None
@@ -115,9 +116,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Revert the migration: drop the ticket registry schema.
 
-    Only schema and draft reference data are removed; this migration predates any regulatory appeal
-    data, so the downgrade deletes no regulatory records (root ``CLAUDE.md``).
+    Destructive: this drops the regulatory ``ticket`` and ``ticket_applicant`` tables. The guard
+    aborts the downgrade if either still holds rows, so regulatory data is never deleted by a
+    rollback (root ``CLAUDE.md``, docs/01). Use a forward-fix migration or an audited purge instead.
     """
+    abort_if_tables_not_empty("ticket", "ticket_applicant")
     op.drop_table("registration_sequence")
     op.drop_index("ix_dictionary_entry_dictionary_type", table_name="dictionary_entry")
     op.drop_table("dictionary_entry")

@@ -1,28 +1,19 @@
-"""Seed draft reference dictionaries.
+"""Runtime catalog of the reference dictionaries.
 
-Revision ID: 0002
-Revises: 0001
-Create Date: 2026-07-21
+This is the **current** dictionary catalog used by test fixtures to seed a database. It is NOT
+imported by any migration: the Alembic revision ``0002`` owns an immutable inline snapshot so that
+migration history uniquely determines database state (CRR-HIGH-001). For MVP this catalog mirrors
+that snapshot exactly, and a test in ``test_migration`` asserts they agree. When the
+business-approved taxonomy arrives (Q-A1), update this catalog AND add a NEW Alembic revision with
+explicit mapping/backfill — never edit revision ``0002``.
+
+Codes are English and vendor-neutral (ADR-016); display labels are Russian business content
+(ADR-015). Statuses mirror docs/01 exactly.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-import sqlalchemy as sa
-from alembic import op
-
-revision: str = "0002"
-down_revision: str | None = "0001"
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
-
-# IMMUTABLE historical snapshot (CRR-HIGH-001): this revision owns its seed data inline and must not
-# be edited once released. A migration must uniquely determine the resulting database state, so it
-# never imports the mutable runtime catalog. Future taxonomy changes (Q-A1) are applied by a NEW
-# revision with explicit mapping/backfill; the runtime catalog lives in
-# ``ticket_service.infrastructure.reference_seed`` and a test asserts it matches this snapshot.
-_SEEDED_TYPES: tuple[str, ...] = (
+SEEDED_TYPES: tuple[str, ...] = (
     "channel",
     "product",
     "classifier",
@@ -33,10 +24,10 @@ _SEEDED_TYPES: tuple[str, ...] = (
     "closure_reason",
     "gender",
 )
+"""Dictionary types covered by the seed set."""
 
-# Codes are English and vendor-neutral (ADR-016); display labels are Russian business content
-# (ADR-015). Statuses mirror docs/01 exactly.
-_SEED_ROWS: tuple[dict[str, object], ...] = (
+SEED_ENTRIES: tuple[dict[str, object], ...] = (
+    # Intake channels.
     {
         "dictionary_type": "channel",
         "code": "EMAIL",
@@ -52,6 +43,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
     {"dictionary_type": "channel", "code": "PORTAL", "display_name_ru": "Портал", "sort_order": 30},
     {"dictionary_type": "channel", "code": "PHONE", "display_name_ru": "Телефон", "sort_order": 40},
     {"dictionary_type": "channel", "code": "OTHER", "display_name_ru": "Иное", "sort_order": 90},
+    # Credit products.
     {
         "dictionary_type": "product",
         "code": "MICROLOAN",
@@ -76,6 +68,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "display_name_ru": "Иной продукт",
         "sort_order": 90,
     },
+    # Question classifiers.
     {
         "dictionary_type": "classifier",
         "code": "RESTRUCTURING",
@@ -106,6 +99,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "display_name_ru": "Иной вопрос",
         "sort_order": 90,
     },
+    # Priorities.
     {"dictionary_type": "priority", "code": "LOW", "display_name_ru": "Низкий", "sort_order": 10},
     {
         "dictionary_type": "priority",
@@ -120,6 +114,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "display_name_ru": "Срочный",
         "sort_order": 40,
     },
+    # Statuses (docs/01).
     {"dictionary_type": "status", "code": "NEW", "display_name_ru": "Новое", "sort_order": 10},
     {
         "dictionary_type": "status",
@@ -157,6 +152,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "display_name_ru": "Отменено",
         "sort_order": 70,
     },
+    # Stages (draft).
     {
         "dictionary_type": "stage",
         "code": "REGISTRATION",
@@ -188,6 +184,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "sort_order": 50,
     },
     {"dictionary_type": "stage", "code": "CLOSED", "display_name_ru": "Закрыто", "sort_order": 60},
+    # Decisions (draft).
     {
         "dictionary_type": "decision",
         "code": "APPROVED",
@@ -206,6 +203,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "display_name_ru": "Отказано",
         "sort_order": 30,
     },
+    # Closure reasons (draft).
     {
         "dictionary_type": "closure_reason",
         "code": "RESOLVED",
@@ -236,6 +234,7 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "display_name_ru": "Вне компетенции",
         "sort_order": 90,
     },
+    # Gender.
     {"dictionary_type": "gender", "code": "MALE", "display_name_ru": "Мужской", "sort_order": 10},
     {"dictionary_type": "gender", "code": "FEMALE", "display_name_ru": "Женский", "sort_order": 20},
     {
@@ -245,46 +244,4 @@ _SEED_ROWS: tuple[dict[str, object], ...] = (
         "sort_order": 90,
     },
 )
-
-
-def _dictionary_table() -> sa.Table:
-    """Build a lightweight table reference for bulk seed operations.
-
-    Returns:
-        An ad-hoc ``dictionary_entry`` table description sufficient for insert/delete.
-    """
-    return sa.table(
-        "dictionary_entry",
-        sa.column("dictionary_type", sa.String),
-        sa.column("code", sa.String),
-        sa.column("display_name_ru", sa.String),
-        sa.column("display_name_kk", sa.String),
-        sa.column("sort_order", sa.Integer),
-        sa.column("is_active", sa.Boolean),
-    )
-
-
-def upgrade() -> None:
-    """Apply the migration: insert the draft reference dictionaries (backfill)."""
-    rows = [
-        {
-            "dictionary_type": row["dictionary_type"],
-            "code": row["code"],
-            "display_name_ru": row["display_name_ru"],
-            "display_name_kk": None,
-            "sort_order": row["sort_order"],
-            "is_active": True,
-        }
-        for row in _SEED_ROWS
-    ]
-    op.bulk_insert(_dictionary_table(), rows)
-
-
-def downgrade() -> None:
-    """Revert the migration: delete only the seeded draft dictionary entries.
-
-    Deletion is scoped to the seeded dictionary types (reference data, not regulatory appeal data),
-    so no regulatory records are affected (root ``CLAUDE.md``).
-    """
-    table = _dictionary_table()
-    op.execute(table.delete().where(table.c.dictionary_type.in_(_SEEDED_TYPES)))
+"""All seeded dictionary entries (draft codes; see Q-A1)."""

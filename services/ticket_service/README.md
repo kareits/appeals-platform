@@ -119,8 +119,12 @@ monotonic sequence (for example `AP-2026-000001`). Uniqueness is guaranteed by l
   `sla_policy_version`/`response_sent_at`/`no_response_reason` ticket columns and `audit_log`.
 - **backfill:** `0002` seeds draft reference dictionaries (Q-A1; codes are mapped later, not
   discarded).
-- **rollback:** `alembic downgrade base` drops the schema; `downgrade 0001` removes only the seed
-  rows. No regulatory appeal data is deleted (root `CLAUDE.md`).
+- **rollback:** downgrades are **destructive and guarded** — dropping regulatory/audit tables
+  (`ticket`, `ticket_applicant`, `ticket_comment`, `outbox_event`, `audit_log`) or their columns
+  aborts with `RegulatoryDataPresentError` if any hold rows (root `CLAUDE.md`, docs/01, docs/06); use
+  a forward-fix migration or an explicit audited purge instead. Only reference-data rollback
+  (`downgrade 0001` removing seed dictionaries) is unconditionally allowed. On an empty schema a full
+  `downgrade base` is permitted.
 - **validation:** `test_migration` applies/seeds/reverts against SQLite; `test_models` covers the
   unique registration number, nullable demographics, and optimistic locking.
 

@@ -10,11 +10,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, tzinfo
+from datetime import tzinfo
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response
 from mfo_http import ProblemDetail, ProblemDetailError
+from pydantic import AwareDatetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
@@ -49,7 +50,11 @@ from ticket_service.application.commands import (
     TicketSearchQuery,
     UpdateTicketCommand,
 )
-from ticket_service.application.errors import TicketNotFoundError, VersionConflictError
+from ticket_service.application.errors import (
+    TicketNotFoundError,
+    UnknownReferenceCodeError,
+    VersionConflictError,
+)
 from ticket_service.domain.invariants import TicketInvariantError
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
 
@@ -79,6 +84,8 @@ async def _domain_errors() -> AsyncIterator[None]:
         raise _problem(409, "Version conflict", "the ticket was modified concurrently") from exc
     except IntegrityError as exc:
         raise _problem(409, "Conflict", "the request conflicts with an existing record") from exc
+    except UnknownReferenceCodeError as exc:
+        raise _problem(422, "Invalid reference code", str(exc)) from exc
     except TicketInvariantError as exc:
         raise _problem(422, "Invalid ticket", str(exc)) from exc
 
@@ -122,7 +129,9 @@ def _to_applicant_input(model: ApplicantModel) -> ApplicantInput:
     )
 
 
-@router.post("/tickets", response_model=TicketResponse, status_code=201)
+@router.post(
+    "/tickets", response_model=TicketResponse, status_code=201, operation_id="createManualTicket"
+)
 async def create_manual_ticket(
     body: CreateTicketRequest,
     response: Response,
@@ -165,7 +174,7 @@ async def create_manual_ticket(
     return ticket_to_response(ticket)
 
 
-@router.get("/tickets/{ticket_id}", response_model=TicketResponse)
+@router.get("/tickets/{ticket_id}", response_model=TicketResponse, operation_id="getTicket")
 async def get_ticket(
     ticket_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -184,26 +193,26 @@ async def get_ticket(
     return ticket_to_response(ticket)
 
 
-@router.get("/tickets", response_model=PaginatedTickets)
+@router.get("/tickets", response_model=PaginatedTickets, operation_id="searchTickets")
 async def search_tickets(
     session: Annotated[AsyncSession, Depends(get_session)],
-    registration_number: Annotated[str | None, Query()] = None,
-    identifier_value: Annotated[str | None, Query()] = None,
-    full_name: Annotated[str | None, Query()] = None,
-    contract_number: Annotated[str | None, Query()] = None,
-    status_code: Annotated[str | None, Query()] = None,
-    stage_code: Annotated[str | None, Query()] = None,
-    product_code: Annotated[str | None, Query()] = None,
-    classifier_code: Annotated[str | None, Query()] = None,
-    channel_code: Annotated[str | None, Query()] = None,
-    assignee_id: Annotated[uuid.UUID | None, Query()] = None,
-    team_id: Annotated[uuid.UUID | None, Query()] = None,
-    received_from: Annotated[datetime | None, Query()] = None,
-    received_to: Annotated[datetime | None, Query()] = None,
-    registered_from: Annotated[datetime | None, Query()] = None,
-    registered_to: Annotated[datetime | None, Query()] = None,
+    registration_number: Annotated[str | None, Query(alias="registrationNumber")] = None,
+    identifier_value: Annotated[str | None, Query(alias="identifierValue")] = None,
+    full_name: Annotated[str | None, Query(alias="fullName")] = None,
+    contract_number: Annotated[str | None, Query(alias="contractNumber")] = None,
+    status_code: Annotated[str | None, Query(alias="statusCode")] = None,
+    stage_code: Annotated[str | None, Query(alias="stageCode")] = None,
+    product_code: Annotated[str | None, Query(alias="productCode")] = None,
+    classifier_code: Annotated[str | None, Query(alias="classifierCode")] = None,
+    channel_code: Annotated[str | None, Query(alias="channelCode")] = None,
+    assignee_id: Annotated[uuid.UUID | None, Query(alias="assigneeId")] = None,
+    team_id: Annotated[uuid.UUID | None, Query(alias="teamId")] = None,
+    received_from: Annotated[AwareDatetime | None, Query(alias="receivedFrom")] = None,
+    received_to: Annotated[AwareDatetime | None, Query(alias="receivedTo")] = None,
+    registered_from: Annotated[AwareDatetime | None, Query(alias="registeredFrom")] = None,
+    registered_to: Annotated[AwareDatetime | None, Query(alias="registeredTo")] = None,
     page: Annotated[int, Query(ge=1)] = 1,
-    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    page_size: Annotated[int, Query(ge=1, le=100, alias="pageSize")] = 20,
 ) -> PaginatedTickets:
     """Search appeals by the supported filters.
 
@@ -256,7 +265,9 @@ async def search_tickets(
     )
 
 
-@router.patch("/tickets/{ticket_id}", response_model=TicketResponse)
+@router.patch(
+    "/tickets/{ticket_id}", response_model=TicketResponse, operation_id="updateTicketDetails"
+)
 async def update_ticket_details(
     ticket_id: uuid.UUID,
     body: UpdateTicketRequest,
@@ -288,7 +299,9 @@ async def update_ticket_details(
     return ticket_to_response(ticket)
 
 
-@router.post("/tickets/{ticket_id}/classify", response_model=TicketResponse)
+@router.post(
+    "/tickets/{ticket_id}/classify", response_model=TicketResponse, operation_id="classifyTicket"
+)
 async def classify_ticket(
     ticket_id: uuid.UUID,
     body: ClassifyRequest,
@@ -317,7 +330,9 @@ async def classify_ticket(
     return ticket_to_response(ticket)
 
 
-@router.post("/tickets/{ticket_id}/decision", response_model=TicketResponse)
+@router.post(
+    "/tickets/{ticket_id}/decision", response_model=TicketResponse, operation_id="recordDecision"
+)
 async def record_decision(
     ticket_id: uuid.UUID,
     body: RecordDecisionRequest,
@@ -347,7 +362,9 @@ async def record_decision(
     return ticket_to_response(ticket)
 
 
-@router.post("/tickets/{ticket_id}/close", response_model=TicketResponse)
+@router.post(
+    "/tickets/{ticket_id}/close", response_model=TicketResponse, operation_id="closeTicket"
+)
 async def close_ticket(
     ticket_id: uuid.UUID,
     body: CloseTicketRequest,
@@ -371,6 +388,7 @@ async def close_ticket(
         closure_reason_code=body.closure_reason_code,
         response_sent_at=body.response_sent_at,
         no_response_reason=body.no_response_reason,
+        actor_id=body.actor_id,
     )
     async with _domain_errors():
         ticket = await use_cases.close_ticket(session, command, timezone)
@@ -378,7 +396,9 @@ async def close_ticket(
     return ticket_to_response(ticket)
 
 
-@router.post("/tickets/{ticket_id}/legal-hold", response_model=TicketResponse)
+@router.post(
+    "/tickets/{ticket_id}/legal-hold", response_model=TicketResponse, operation_id="setLegalHold"
+)
 async def set_legal_hold(
     ticket_id: uuid.UUID,
     body: LegalHoldRequest,
@@ -399,6 +419,7 @@ async def set_legal_hold(
         expected_version=body.expected_version,
         legal_hold=body.legal_hold,
         reason=body.reason,
+        actor_id=body.actor_id,
     )
     async with _domain_errors():
         ticket = await use_cases.set_legal_hold(session, command)
@@ -406,7 +427,12 @@ async def set_legal_hold(
     return ticket_to_response(ticket)
 
 
-@router.post("/tickets/{ticket_id}/comments", response_model=CommentResponse, status_code=201)
+@router.post(
+    "/tickets/{ticket_id}/comments",
+    response_model=CommentResponse,
+    status_code=201,
+    operation_id="addComment",
+)
 async def add_comment(
     ticket_id: uuid.UUID,
     body: CommentRequest,
@@ -429,7 +455,11 @@ async def add_comment(
     return comment_to_response(comment)
 
 
-@router.get("/tickets/{ticket_id}/comments", response_model=list[CommentResponse])
+@router.get(
+    "/tickets/{ticket_id}/comments",
+    response_model=list[CommentResponse],
+    operation_id="listComments",
+)
 async def list_comments(
     ticket_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],

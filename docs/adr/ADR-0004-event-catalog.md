@@ -46,8 +46,10 @@ be meaningful.
 
 ## Migration impact
 
-None yet (no producers implemented). Producers adopt the envelope and catalog from their first
-event (starting EP-1).
+The Ticket Service is the first producer (EP-1): it emits `ticket.created.v1`,
+`ticket.classified.v1`, `ticket.updated.v1`, `ticket.decision_recorded.v1`, and `ticket.closed.v1`
+through the transactional outbox, with payload schemas under `contracts/events/payloads/`. Further
+producers adopt the same envelope and catalog from their first event.
 
 ## Rollback considerations
 

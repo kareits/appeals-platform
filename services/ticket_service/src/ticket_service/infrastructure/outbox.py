@@ -137,6 +137,10 @@ class OutboxRelay:
         """
         published = 0
         async with self._session_factory() as session:
+            # Claim a disjoint batch across concurrent relays: FOR UPDATE SKIP LOCKED skips rows
+            # another instance is already publishing (CR-MEDIUM-003). On SQLite the clause is a
+            # no-op and single-writer semantics apply. Consumers still deduplicate on eventId
+            # because publish/commit remains inherently at-least-once.
             rows = (
                 (
                     await session.execute(
@@ -144,6 +148,7 @@ class OutboxRelay:
                         .where(OutboxEvent.published_at.is_(None))
                         .order_by(OutboxEvent.created_at)
                         .limit(batch_size)
+                        .with_for_update(skip_locked=True)
                     )
                 )
                 .scalars()

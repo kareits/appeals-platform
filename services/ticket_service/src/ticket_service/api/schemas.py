@@ -8,22 +8,51 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from ticket_service.domain.enums import ApplicantType, DataSource, IdentifierType
 from ticket_service.infrastructure.masking import mask_identifier
 from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
 
+# Bounded input types aligned with the database column limits, so oversized/blank input is rejected
+# with 422 by Pydantic instead of failing only in PostgreSQL (CR-MEDIUM-002). ``CodeStr`` matches a
+# 64-char coded column; ``SubjectStr`` a 512-char subject; ``BodyStr`` a non-blank free-text field.
+# Constraints are mirrored in contracts/openapi/ticket-service.v1.yaml (CR-MEDIUM-006 parity).
+CodeStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+SubjectStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+BodyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# Optimistic-locking version: positive, matching the contract's ``minimum: 1``.
+VersionInt = Annotated[int, Field(ge=1)]
 
-class CamelModel(BaseModel):
-    """Base model serializing fields as camelCase while accepting snake_case on construction."""
+
+class RequestModel(BaseModel):
+    """Strict base for HTTP request bodies.
+
+    Input must use the camelCase aliases (``populate_by_name=False``) and unknown properties are
+    rejected (``extra="forbid"``), so the runtime schema advertises ``additionalProperties: false``
+    and matches the committed contract exactly (CR-MEDIUM-006 parity).
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=False, extra="forbid")
+
+
+class ResponseModel(BaseModel):
+    """Base for HTTP responses: camelCase output, snake_case construction by the mappers."""
 
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
-class ApplicantModel(CamelModel):
+class ApplicantModel(RequestModel):
     """Request model for a party attached to an appeal.
 
     Attributes:
@@ -43,19 +72,19 @@ class ApplicantModel(CamelModel):
 
     applicant_type: ApplicantType
     data_source: DataSource
-    full_name: str | None = None
+    full_name: SubjectStr | None = None
     identifier_type: IdentifierType | None = None
-    identifier_value: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    gender_code: str | None = None
+    identifier_value: CodeStr | None = None
+    email: SubjectStr | None = None
+    phone: CodeStr | None = None
+    gender_code: CodeStr | None = None
     birth_date: date | None = None
     age: int | None = None
-    region_code: str | None = None
-    representative_basis: str | None = None
+    region_code: CodeStr | None = None
+    representative_basis: SubjectStr | None = None
 
 
-class CreateTicketRequest(CamelModel):
+class CreateTicketRequest(RequestModel):
     """Request body to register an appeal.
 
     Attributes:
@@ -71,19 +100,38 @@ class CreateTicketRequest(CamelModel):
         representative: An optional representative party.
     """
 
-    received_at: datetime
-    source_channel_code: str
-    subject: str
-    description: str
-    product_code: str
-    classifier_code: str
-    priority_code: str
+    received_at: AwareDatetime
+    source_channel_code: CodeStr
+    subject: SubjectStr
+    description: BodyStr
+    product_code: CodeStr
+    classifier_code: CodeStr
+    priority_code: CodeStr
     applicant: ApplicantModel
-    contract_number: str | None = None
+    contract_number: CodeStr | None = None
     representative: ApplicantModel | None = None
 
+    @model_validator(mode="after")
+    def _check_party_roles(self) -> Self:
+        """Ensure the primary party is the consumer and the representative is a representative.
 
-class UpdateTicketRequest(CamelModel):
+        Returns:
+            The validated request.
+
+        Raises:
+            ValueError: If a party carries the wrong ``applicantType``.
+        """
+        if self.applicant.applicant_type is not ApplicantType.CONSUMER:
+            raise ValueError("applicant must have applicantType CONSUMER")
+        if (
+            self.representative is not None
+            and self.representative.applicant_type is not ApplicantType.REPRESENTATIVE
+        ):
+            raise ValueError("representative must have applicantType REPRESENTATIVE")
+        return self
+
+
+class UpdateTicketRequest(RequestModel):
     """Request body to update editable appeal-card details.
 
     Only supplied fields are applied; ``expected_version`` enforces optimistic locking.
@@ -96,14 +144,14 @@ class UpdateTicketRequest(CamelModel):
         contract_number: New contract number, if supplied (``None`` clears it).
     """
 
-    expected_version: int
-    subject: str | None = None
-    description: str | None = None
-    source_channel_code: str | None = None
-    contract_number: str | None = None
+    expected_version: VersionInt
+    subject: SubjectStr | None = None
+    description: BodyStr | None = None
+    source_channel_code: CodeStr | None = None
+    contract_number: CodeStr | None = None
 
 
-class ClassifyRequest(CamelModel):
+class ClassifyRequest(RequestModel):
     """Request body to classify an appeal.
 
     Attributes:
@@ -113,13 +161,13 @@ class ClassifyRequest(CamelModel):
         priority_code: Priority code.
     """
 
-    expected_version: int
-    product_code: str
-    classifier_code: str
-    priority_code: str
+    expected_version: VersionInt
+    product_code: CodeStr
+    classifier_code: CodeStr
+    priority_code: CodeStr
 
 
-class RecordDecisionRequest(CamelModel):
+class RecordDecisionRequest(RequestModel):
     """Request body to record a decision.
 
     Attributes:
@@ -130,14 +178,14 @@ class RecordDecisionRequest(CamelModel):
         decision_summary: Optional short decision summary.
     """
 
-    expected_version: int
-    decision_code: str
-    decision_text: str
+    expected_version: VersionInt
+    decision_code: CodeStr
+    decision_text: BodyStr
     decision_by: uuid.UUID
-    decision_summary: str | None = None
+    decision_summary: SubjectStr | None = None
 
 
-class CloseTicketRequest(CamelModel):
+class CloseTicketRequest(RequestModel):
     """Request body to close an appeal.
 
     Attributes:
@@ -145,29 +193,35 @@ class CloseTicketRequest(CamelModel):
         closure_reason_code: Closure-reason code (dictionary ``closure_reason``).
         response_sent_at: When a response was sent, if any.
         no_response_reason: Justification when no response was sent.
+        actor_id: Identifier of the actor performing the closure (interim caller-supplied; a
+            trusted authenticated actor arrives with IAM, TASK_01D).
     """
 
-    expected_version: int
-    closure_reason_code: str
-    response_sent_at: datetime | None = None
-    no_response_reason: str | None = None
+    expected_version: VersionInt
+    closure_reason_code: CodeStr
+    response_sent_at: AwareDatetime | None = None
+    no_response_reason: SubjectStr | None = None
+    actor_id: uuid.UUID | None = None
 
 
-class LegalHoldRequest(CamelModel):
+class LegalHoldRequest(RequestModel):
     """Request body to set or clear a legal hold.
 
     Attributes:
         expected_version: Version the client last observed.
         legal_hold: The desired legal-hold state.
         reason: Optional reason recorded in the audit log.
+        actor_id: Identifier of the actor performing the change (interim caller-supplied; a trusted
+            authenticated actor arrives with IAM, TASK_01D).
     """
 
-    expected_version: int
+    expected_version: VersionInt
     legal_hold: bool
     reason: str | None = None
+    actor_id: uuid.UUID | None = None
 
 
-class CommentRequest(CamelModel):
+class CommentRequest(RequestModel):
     """Request body to add a comment.
 
     Attributes:
@@ -176,10 +230,10 @@ class CommentRequest(CamelModel):
     """
 
     author_id: uuid.UUID
-    body: str
+    body: BodyStr
 
 
-class ApplicantResponse(CamelModel):
+class ApplicantResponse(ResponseModel):
     """Response model for a party; the national identifier is masked.
 
     Attributes:
@@ -213,7 +267,7 @@ class ApplicantResponse(CamelModel):
     representative_basis: str | None
 
 
-class TicketResponse(CamelModel):
+class TicketResponse(ResponseModel):
     """Response model for the full appeal card.
 
     Attributes:
@@ -272,7 +326,7 @@ class TicketResponse(CamelModel):
     applicants: list[ApplicantResponse]
 
 
-class TicketSummary(CamelModel):
+class TicketSummary(ResponseModel):
     """Compact appeal representation for search results.
 
     Attributes:
@@ -306,7 +360,7 @@ class TicketSummary(CamelModel):
     registered_at: datetime
 
 
-class PageMeta(CamelModel):
+class PageMeta(ResponseModel):
     """Pagination metadata.
 
     Attributes:
@@ -320,7 +374,7 @@ class PageMeta(CamelModel):
     total: int
 
 
-class PaginatedTickets(CamelModel):
+class PaginatedTickets(ResponseModel):
     """A page of appeal search results.
 
     Attributes:
@@ -332,7 +386,7 @@ class PaginatedTickets(CamelModel):
     page: PageMeta
 
 
-class CommentResponse(CamelModel):
+class CommentResponse(ResponseModel):
     """Response model for a comment.
 
     Attributes:

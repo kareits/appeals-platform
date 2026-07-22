@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ticket_service.domain.registration_number import RegistrationNumber
@@ -56,11 +57,36 @@ class RegistrationNumberAllocator:
 
         row = await session.get(RegistrationSequence, year, with_for_update=True)
         if row is None:
-            row = RegistrationSequence(year=year, last_value=0)
-            session.add(row)
-            await session.flush()
+            row = await self._create_year_row(session, year)
 
         row.last_value += 1
         await session.flush()
 
         return RegistrationNumber.create(prefix=self._prefix, year=year, sequence=row.last_value)
+
+    async def _create_year_row(self, session: AsyncSession, year: int) -> RegistrationSequence:
+        """Create the counter row for a new year, tolerating a concurrent creator.
+
+        ``SELECT ... FOR UPDATE`` cannot lock a not-yet-existing row, so two first allocations in a
+        new year can both attempt the insert. The loser's unique-key violation is caught in a
+        savepoint and the winner's row is re-read under lock, so neither registration fails
+        (CR-MEDIUM-004).
+
+        Args:
+            session: The active session.
+            year: The calendar year to create the counter for.
+
+        Returns:
+            The counter row for the year (freshly created or created by a concurrent caller).
+        """
+        try:
+            async with session.begin_nested():
+                row = RegistrationSequence(year=year, last_value=0)
+                session.add(row)
+                await session.flush()
+                return row
+        except IntegrityError:
+            existing = await session.get(RegistrationSequence, year, with_for_update=True)
+            if existing is None:  # pragma: no cover - the row must exist after a unique violation
+                raise
+            return existing

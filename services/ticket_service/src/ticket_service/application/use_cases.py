@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime, tzinfo
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ticket_service.application import events
@@ -34,10 +35,11 @@ from ticket_service.domain.invariants import (
     resolve_retention_until,
 )
 from ticket_service.domain.sla import DEFAULT_SLA_POLICY, compute_due_dates
-from ticket_service.infrastructure import audit
+from ticket_service.infrastructure import audit, reference_data
 from ticket_service.infrastructure.audit import AuditRepository
 from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
 from ticket_service.infrastructure.outbox import OutboxRepository
+from ticket_service.infrastructure.reference_data import ReferenceDataRepository
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
 from ticket_service.infrastructure.repositories import CommentRepository, TicketRepository
 
@@ -109,61 +111,81 @@ async def create_manual_ticket(
         if existing is not None:
             return existing, False
 
+    await ReferenceDataRepository(session).validate_active(
+        [
+            (reference_data.DICT_CHANNEL, command.source_channel_code),
+            (reference_data.DICT_PRODUCT, command.product_code),
+            (reference_data.DICT_CLASSIFIER, command.classifier_code),
+            (reference_data.DICT_PRIORITY, command.priority_code),
+        ]
+    )
+
     now = datetime.now(UTC)
-    number = await allocator.allocate(session, at=now)
     # Ticket Service owns SLA deadlines; compute them from the received time (ADR-009/ADR-0005).
     due = compute_due_dates(command.received_at)
-    ticket = Ticket(
-        registration_number=number.format(),
-        idempotency_key=command.idempotency_key,
-        received_at=command.received_at,
-        registered_at=now,
-        source_channel_code=command.source_channel_code,
-        subject=command.subject,
-        description=command.description,
-        contract_number=command.contract_number,
-        product_code=command.product_code,
-        classifier_code=command.classifier_code,
-        priority_code=command.priority_code,
-        current_status_code=DEFAULT_STATUS_CODE,
-        current_stage_code=DEFAULT_STAGE_CODE,
-        internal_due_at=due.internal_due_at,
-        legal_due_at=due.legal_due_at,
-        sla_policy_version=DEFAULT_SLA_POLICY.version,
-    )
-    check_registration_fields(
-        {
-            "registration_number": ticket.registration_number,
-            "received_at": ticket.received_at,
-            "registered_at": ticket.registered_at,
-            "source_channel_code": ticket.source_channel_code,
-            "subject": ticket.subject,
-            "description": ticket.description,
-            "product_code": ticket.product_code,
-            "classifier_code": ticket.classifier_code,
-            "priority_code": ticket.priority_code,
-            "current_status_code": ticket.current_status_code,
-            "current_stage_code": ticket.current_stage_code,
-        }
-    )
-
     consumer = _to_applicant(command.applicant)
-    ticket.applicants.append(consumer)
-    if command.representative is not None:
-        ticket.applicants.append(_to_applicant(command.representative))
 
-    tickets.add(ticket)
-    await session.flush()
+    try:
+        # Allocate the number and insert the ticket atomically in a savepoint so a concurrent
+        # duplicate idempotency key rolls back the reserved number instead of leaving a partial
+        # write and returns the original result (CR-HIGH-005).
+        async with session.begin_nested():
+            number = await allocator.allocate(session, at=now)
+            ticket = Ticket(
+                registration_number=number.format(),
+                idempotency_key=command.idempotency_key,
+                received_at=command.received_at,
+                registered_at=now,
+                source_channel_code=command.source_channel_code,
+                subject=command.subject,
+                description=command.description,
+                contract_number=command.contract_number,
+                product_code=command.product_code,
+                classifier_code=command.classifier_code,
+                priority_code=command.priority_code,
+                current_status_code=DEFAULT_STATUS_CODE,
+                current_stage_code=DEFAULT_STAGE_CODE,
+                internal_due_at=due.internal_due_at,
+                legal_due_at=due.legal_due_at,
+                sla_policy_version=DEFAULT_SLA_POLICY.version,
+            )
+            check_registration_fields(
+                {
+                    "registration_number": ticket.registration_number,
+                    "received_at": ticket.received_at,
+                    "registered_at": ticket.registered_at,
+                    "source_channel_code": ticket.source_channel_code,
+                    "subject": ticket.subject,
+                    "description": ticket.description,
+                    "product_code": ticket.product_code,
+                    "classifier_code": ticket.classifier_code,
+                    "priority_code": ticket.priority_code,
+                    "current_status_code": ticket.current_status_code,
+                    "current_stage_code": ticket.current_stage_code,
+                }
+            )
+            ticket.applicants.append(consumer)
+            if command.representative is not None:
+                ticket.applicants.append(_to_applicant(command.representative))
+            tickets.add(ticket)
+            await session.flush()
 
-    await outbox.enqueue(
-        events.ticket_created_event(ticket, consumer, command.representative is not None)
-    )
-    AuditRepository(session).record(
-        entity_id=ticket.id,
-        action=audit.ACTION_REGISTERED,
-        details={"registrationNumber": ticket.registration_number},
-    )
-    return ticket, True
+            await outbox.enqueue(
+                events.ticket_created_event(ticket, consumer, command.representative is not None)
+            )
+            AuditRepository(session).record(
+                entity_id=ticket.id,
+                action=audit.ACTION_REGISTERED,
+                details={"registrationNumber": ticket.registration_number},
+            )
+            return ticket, True
+    except IntegrityError:
+        # A concurrent request with the same idempotency key won the insert; return the original.
+        if command.idempotency_key is not None:
+            existing = await tickets.get_by_idempotency_key(command.idempotency_key)
+            if existing is not None:
+                return existing, False
+        raise
 
 
 async def update_ticket_details(session: AsyncSession, command: UpdateTicketCommand) -> Ticket:
@@ -181,6 +203,11 @@ async def update_ticket_details(session: AsyncSession, command: UpdateTicketComm
         VersionConflictError: If ``expected_version`` does not match the stored version.
     """
     ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+
+    if "source_channel_code" in command.provided and command.source_channel_code is not None:
+        await ReferenceDataRepository(session).validate_active(
+            [(reference_data.DICT_CHANNEL, command.source_channel_code)]
+        )
 
     changed: list[str] = []
     for name in _UPDATABLE_FIELDS:
@@ -217,6 +244,13 @@ async def classify_ticket(session: AsyncSession, command: ClassifyTicketCommand)
         VersionConflictError: If ``expected_version`` does not match the stored version.
     """
     ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+    await ReferenceDataRepository(session).validate_active(
+        [
+            (reference_data.DICT_PRODUCT, command.product_code),
+            (reference_data.DICT_CLASSIFIER, command.classifier_code),
+            (reference_data.DICT_PRIORITY, command.priority_code),
+        ]
+    )
     ticket.product_code = command.product_code
     ticket.classifier_code = command.classifier_code
     ticket.priority_code = command.priority_code
@@ -245,6 +279,9 @@ async def record_decision(session: AsyncSession, command: RecordDecisionCommand)
         VersionConflictError: If ``expected_version`` does not match the stored version.
     """
     ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+    await ReferenceDataRepository(session).validate_active(
+        [(reference_data.DICT_DECISION, command.decision_code)]
+    )
     ticket.decision_code = command.decision_code
     ticket.decision_summary = command.decision_summary
     ticket.decision_text = command.decision_text
@@ -285,6 +322,9 @@ async def close_ticket(
         TicketInvariantError: If a closure prerequisite is unmet.
     """
     ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+    await ReferenceDataRepository(session).validate_active(
+        [(reference_data.DICT_CLOSURE_REASON, command.closure_reason_code)]
+    )
     check_can_close(
         ClosureState(
             decision_code=ticket.decision_code,
@@ -388,6 +428,12 @@ async def add_comment(session: AsyncSession, command: AddCommentCommand) -> Tick
     )
     CommentRepository(session).add(comment)
     await session.flush()
+    AuditRepository(session).record(
+        entity_id=command.ticket_id,
+        action=audit.ACTION_COMMENT_ADDED,
+        actor_id=command.author_id,
+        details={"commentId": str(comment.id)},
+    )
     return comment
 
 

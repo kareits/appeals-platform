@@ -11,6 +11,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from ticket_service.infrastructure.migration_guards import abort_if_tables_not_empty
 
 revision: str = "0004"
 down_revision: str | None = "0003"
@@ -55,9 +56,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Revert the migration.
 
-    Drops only structures introduced here. The audit log is empty at this revision, so no
-    regulatory audit history is lost (root ``CLAUDE.md``, docs/06).
+    Destructive: drops ``audit_log`` and removes closure/SLA ticket columns. The guard aborts if
+    ``audit_log`` or ``ticket`` hold rows, so audit history and closure evidence are never deleted
+    by a rollback (root ``CLAUDE.md``, docs/06).
     """
+    abort_if_tables_not_empty("ticket", "audit_log")
     op.drop_index("ix_audit_log_entity", table_name="audit_log")
     op.drop_table("audit_log")
     op.drop_column("ticket", "no_response_reason")

@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
+import yaml
 from httpx import AsyncClient
+from ticket_service.config import Settings
+from ticket_service.main import create_app
+
+_CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "openapi" / "ticket-service.v1.yaml"
 
 
 def _create_body(**overrides: Any) -> dict[str, Any]:
@@ -195,3 +201,218 @@ async def test_create_sets_sla_due_dates(client: AsyncClient) -> None:
     assert body["internalDueAt"] is not None
     assert body["legalDueAt"] is not None
     assert body["slaPolicyVersion"] == "v1-temp"
+
+
+async def test_camelcase_search_filter_actually_narrows_results(client: AsyncClient) -> None:
+    """A camelCase identifierValue filter narrows across multiple tickets (CR-HIGH-002)."""
+    first = _create_body()
+    first["applicant"]["identifierValue"] = "900101300123"
+    second = _create_body()
+    second["applicant"]["identifierValue"] = "111111111111"
+    await client.post("/api/v1/tickets", json=first)
+    await client.post("/api/v1/tickets", json=second)
+
+    page = (await client.get("/api/v1/tickets", params={"identifierValue": "900101300123"})).json()
+    assert page["page"]["total"] == 1
+    assert page["items"][0]["registrationNumber"] == "AP-2026-000001"
+
+
+async def test_naive_received_at_is_rejected(client: AsyncClient) -> None:
+    """A timezone-naive receivedAt is rejected with 422 (CR-MEDIUM-001)."""
+    response = await client.post(
+        "/api/v1/tickets", json=_create_body(receivedAt="2026-07-22T09:00:00")
+    )
+    assert response.status_code == 422
+
+
+async def test_wrong_applicant_role_is_rejected(client: AsyncClient) -> None:
+    """A primary applicant labelled REPRESENTATIVE is rejected with 422 (CR-MEDIUM-002)."""
+    body = _create_body()
+    body["applicant"]["applicantType"] = "REPRESENTATIVE"
+    response = await client.post("/api/v1/tickets", json=body)
+    assert response.status_code == 422
+
+
+async def test_unknown_reference_code_is_rejected(client: AsyncClient) -> None:
+    """A product code absent from the dictionaries is rejected with 422 (CR-HIGH-006)."""
+    response = await client.post("/api/v1/tickets", json=_create_body(productCode="NOT_A_PRODUCT"))
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_oversized_code_is_rejected(client: AsyncClient) -> None:
+    """An over-length coded value is rejected with 422, not deferred to the DB (CR-MEDIUM-002)."""
+    response = await client.post("/api/v1/tickets", json=_create_body(sourceChannelCode="X" * 65))
+    assert response.status_code == 422
+
+
+# Request operations compared for runtime/committed contract parity (CR-MEDIUM-006).
+_REQUEST_OPERATIONS = (
+    "createManualTicket",
+    "updateTicketDetails",
+    "classifyTicket",
+    "recordDecision",
+    "closeTicket",
+    "setLegalHold",
+    "addComment",
+)
+_HTTP_METHODS = {"get", "post", "patch", "put", "delete"}
+
+
+def _runtime_openapi() -> dict[str, Any]:
+    """Build the runtime OpenAPI document from the FastAPI app.
+
+    Returns:
+        The generated OpenAPI document.
+    """
+    app = create_app(Settings(environment="test", database_url="sqlite+aiosqlite:///:memory:"))
+    return dict(app.openapi())
+
+
+def _contract() -> dict[str, Any]:
+    """Load the committed OpenAPI contract.
+
+    Returns:
+        The parsed contract document.
+    """
+    return cast(dict[str, Any], yaml.safe_load(_CONTRACT.read_text(encoding="utf-8")))
+
+
+def _operations_by_id(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Index a spec's operations by operationId.
+
+    Args:
+        spec: An OpenAPI document.
+
+    Returns:
+        A mapping of operationId to the operation object.
+    """
+    return {
+        operation["operationId"]: operation
+        for path_item in spec["paths"].values()
+        for method, operation in path_item.items()
+        if method in _HTTP_METHODS
+    }
+
+
+def _resolve(schema: dict[str, Any], components: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a top-level ``$ref`` against the component schemas.
+
+    Args:
+        schema: A schema that may be a ``$ref``.
+        components: The component-schema map.
+
+    Returns:
+        The resolved schema.
+    """
+    if "$ref" in schema:
+        return cast(dict[str, Any], components[schema["$ref"].split("/")[-1]])
+    return schema
+
+
+def _is_null_schema(node: dict[str, Any]) -> bool:
+    """Return whether a schema node represents only the JSON ``null`` type.
+
+    Args:
+        node: The schema node.
+
+    Returns:
+        ``True`` if the node's only type is ``null``.
+    """
+    return node.get("type") == "null"
+
+
+def _canonical(schema: dict[str, Any], components: dict[str, Any]) -> dict[str, Any]:
+    """Reduce a schema to a canonical, comparable form (ignoring titles/defaults/descriptions).
+
+    Resolves ``$ref`` and normalizes nullable unions (runtime ``anyOf[X, null]`` and contract
+    ``type: [X, "null"]``) to a single base plus a ``nullable`` flag, so runtime and committed
+    schemas compare equal iff they are semantically equal. Recurses into object properties and array
+    items and includes ``additionalProperties``, ``required``, and ``enum`` (null-stripped).
+
+    Args:
+        schema: The schema to canonicalize.
+        components: The component-schema map for ``$ref`` resolution.
+
+    Returns:
+        The canonical representation.
+    """
+    schema = _resolve(schema, components)
+    for branch_key in ("anyOf", "oneOf"):
+        if branch_key in schema:
+            branches = schema[branch_key]
+            non_null = [b for b in branches if not _is_null_schema(_resolve(b, components))]
+            nullable = any(_is_null_schema(_resolve(b, components)) for b in branches)
+            base = _canonical(non_null[0], components) if non_null else {"types": []}
+            base["nullable"] = base.get("nullable", False) or nullable
+            return base
+
+    raw_type = schema.get("type")
+    types = [
+        t for t in (raw_type if isinstance(raw_type, list) else [raw_type]) if t and t != "null"
+    ]
+    nullable = isinstance(raw_type, list) and "null" in raw_type
+    result: dict[str, Any] = {"types": sorted(types), "nullable": nullable}
+    if "enum" in schema:
+        result["enum"] = sorted(str(v) for v in schema["enum"] if v is not None)
+    for key in ("minLength", "maxLength", "minimum", "format"):
+        if key in schema:
+            result[key] = schema[key]
+    if "object" in types or "properties" in schema:
+        result["additionalProperties"] = schema.get("additionalProperties", True)
+        result["required"] = sorted(schema.get("required", []))
+        result["properties"] = {
+            name: _canonical(sub, components) for name, sub in schema.get("properties", {}).items()
+        }
+    if "array" in types or "items" in schema:
+        result["items"] = _canonical(schema["items"], components)
+    return result
+
+
+def test_search_query_params_match_committed_contract() -> None:
+    """The runtime search query parameter names exactly equal the committed contract."""
+    runtime = _runtime_openapi()
+    runtime_query = {
+        p["name"]
+        for p in runtime["paths"]["/api/v1/tickets"]["get"]["parameters"]
+        if p.get("in") == "query"
+    }
+    contract = _contract()
+    contract_query = {
+        p["name"]
+        for p in contract["paths"]["/tickets"]["get"]["parameters"]
+        if isinstance(p, dict) and p.get("in") == "query"
+    }
+    assert runtime_query == contract_query
+
+
+def test_request_bodies_match_committed_contract() -> None:
+    """Runtime request bodies match the committed contract, including additionalProperties/enums.
+
+    Compares the fully canonicalized request schema per operation (types, nullability, enums,
+    string/number constraints, additionalProperties, required, and nested referenced schemas), so
+    unknown-field rejection and nested drift are caught (CR-MEDIUM-006).
+    """
+    runtime = _runtime_openapi()
+    contract = _contract()
+    runtime_ops = _operations_by_id(runtime)
+    contract_ops = _operations_by_id(contract)
+    runtime_components = runtime["components"]["schemas"]
+    contract_components = contract["components"]["schemas"]
+
+    for operation_id in _REQUEST_OPERATIONS:
+        runtime_body = runtime_ops[operation_id]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]
+        contract_body = contract_ops[operation_id]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]
+        assert _canonical(runtime_body, runtime_components) == _canonical(
+            contract_body, contract_components
+        ), operation_id
+
+
+async def test_unknown_request_property_is_rejected(client: AsyncClient) -> None:
+    """An unknown body property is rejected with 422, matching additionalProperties=false."""
+    response = await client.post("/api/v1/tickets", json=_create_body(unexpectedField="x"))
+    assert response.status_code == 422
