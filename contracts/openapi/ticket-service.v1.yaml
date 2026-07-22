@@ -170,6 +170,99 @@ paths:
           $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    post:
+      tags: [tickets]
+      operationId: recordDecision
+      summary: Record the decision on an appeal.
+      description: >-
+        Records the decision code, text, author, and timestamp. Requires expectedVersion for
+        optimistic locking. Emits ticket.decision_recorded.v1.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordDecisionRequest'
+      responses:
+        '200':
+          description: The appeal card with the recorded decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}/close:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    post:
+      tags: [tickets]
+      operationId: closeTicket
+      summary: Close an appeal.
+      description: >-
+        Closes an appeal after validating that a decision, decision text, responsible employee,
+        decision date, a response date or a justified absence of response, and a closure reason are
+        present (docs/01). Sets the retention date (at least five years) and the terminal status.
+        A missing prerequisite yields 422. Emits ticket.closed.v1.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseTicketRequest'
+      responses:
+        '200':
+          description: The closed appeal card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}/legal-hold:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    post:
+      tags: [tickets]
+      operationId: setLegalHold
+      summary: Set or clear the legal hold on an appeal.
+      description: >-
+        Places or lifts a legal hold, which exempts the appeal from purge. Requires expectedVersion.
+        The change is audited.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalHoldRequest'
+      responses:
+        '200':
+          description: The appeal card with the updated legal-hold flag.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
   /tickets/{ticketId}/comments:
     parameters:
       - $ref: '#/components/parameters/TicketId'
@@ -304,6 +397,36 @@ components:
         productCode: {type: string, description: Credit-product code.}
         classifierCode: {type: string, description: Question-classifier code.}
         priorityCode: {type: string, description: Priority code.}
+    RecordDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, decisionCode, decisionText, decisionBy]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
+        decisionCode: {type: string, description: Decision code (dictionary 'decision').}
+        decisionSummary: {type: [string, "null"], description: Short decision summary.}
+        decisionText: {type: string, minLength: 1, description: Full decision text.}
+        decisionBy: {type: string, format: uuid, description: Employee recording the decision.}
+    CloseTicketRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        Closes an appeal. Requires a prior decision and a closure reason; a response date OR a
+        recorded reason for its absence must be supplied (docs/01).
+      required: [expectedVersion, closureReasonCode]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
+        closureReasonCode: {type: string, description: Closure-reason code (dictionary 'closure_reason').}
+        responseSentAt: {type: [string, "null"], format: date-time, description: When the response was sent, if any.}
+        noResponseReason: {type: [string, "null"], description: Justification when no response was sent.}
+    LegalHoldRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, legalHold]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
+        legalHold: {type: boolean, description: Whether the ticket is under legal hold.}
+        reason: {type: [string, "null"], description: Optional reason recorded in the audit log.}
     CommentRequest:
       type: object
       additionalProperties: false
@@ -354,6 +477,17 @@ components:
         contractNumber: {type: [string, "null"]}
         legalDueAt: {type: [string, "null"], format: date-time}
         internalDueAt: {type: [string, "null"], format: date-time}
+        slaPolicyVersion: {type: [string, "null"], description: Version of the SLA policy that computed the deadlines.}
+        decisionCode: {type: [string, "null"]}
+        decisionSummary: {type: [string, "null"]}
+        decisionText: {type: [string, "null"]}
+        decisionAt: {type: [string, "null"], format: date-time}
+        decisionBy: {type: [string, "null"], format: uuid}
+        closureReasonCode: {type: [string, "null"]}
+        closedAt: {type: [string, "null"], format: date-time}
+        responseSentAt: {type: [string, "null"], format: date-time}
+        noResponseReason: {type: [string, "null"]}
+        retentionUntil: {type: [string, "null"], format: date}
         legalHold: {type: boolean}
         version: {type: integer}
         applicants:

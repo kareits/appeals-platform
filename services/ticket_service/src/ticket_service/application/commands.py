@@ -138,6 +138,67 @@ class AddCommentCommand:
 
 
 @dataclass(frozen=True)
+class RecordDecisionCommand:
+    """Input to record the decision on an appeal.
+
+    Attributes:
+        ticket_id: The ticket to record the decision on.
+        expected_version: Version the client last observed (optimistic locking).
+        decision_code: Decision code (dictionary ``decision``).
+        decision_text: Full decision text.
+        decision_by: Identifier of the employee recording the decision.
+        decision_summary: Optional short decision summary.
+    """
+
+    ticket_id: uuid.UUID
+    expected_version: int
+    decision_code: str
+    decision_text: str
+    decision_by: uuid.UUID
+    decision_summary: str | None = None
+
+
+@dataclass(frozen=True)
+class CloseTicketCommand:
+    """Input to close an appeal.
+
+    Attributes:
+        ticket_id: The ticket to close.
+        expected_version: Version the client last observed (optimistic locking).
+        closure_reason_code: Closure-reason code (dictionary ``closure_reason``).
+        response_sent_at: When a response was sent, if any.
+        no_response_reason: Justification when no response was sent.
+        actor_id: Identifier of the actor performing the closure, if known.
+    """
+
+    ticket_id: uuid.UUID
+    expected_version: int
+    closure_reason_code: str
+    response_sent_at: datetime | None = None
+    no_response_reason: str | None = None
+    actor_id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True)
+class SetLegalHoldCommand:
+    """Input to place or lift a legal hold on an appeal.
+
+    Attributes:
+        ticket_id: The ticket to update.
+        expected_version: Version the client last observed (optimistic locking).
+        legal_hold: The desired legal-hold state.
+        reason: Optional reason recorded in the audit log.
+        actor_id: Identifier of the actor performing the change, if known.
+    """
+
+    ticket_id: uuid.UUID
+    expected_version: int
+    legal_hold: bool
+    reason: str | None = None
+    actor_id: uuid.UUID | None = None
+
+
+@dataclass(frozen=True)
 class TicketSearchQuery:
     """Filters and pagination for appeal search.
 

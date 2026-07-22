@@ -119,6 +119,54 @@ class ClassifyRequest(CamelModel):
     priority_code: str
 
 
+class RecordDecisionRequest(CamelModel):
+    """Request body to record a decision.
+
+    Attributes:
+        expected_version: Version the client last observed.
+        decision_code: Decision code (dictionary ``decision``).
+        decision_text: Full decision text.
+        decision_by: Employee recording the decision.
+        decision_summary: Optional short decision summary.
+    """
+
+    expected_version: int
+    decision_code: str
+    decision_text: str
+    decision_by: uuid.UUID
+    decision_summary: str | None = None
+
+
+class CloseTicketRequest(CamelModel):
+    """Request body to close an appeal.
+
+    Attributes:
+        expected_version: Version the client last observed.
+        closure_reason_code: Closure-reason code (dictionary ``closure_reason``).
+        response_sent_at: When a response was sent, if any.
+        no_response_reason: Justification when no response was sent.
+    """
+
+    expected_version: int
+    closure_reason_code: str
+    response_sent_at: datetime | None = None
+    no_response_reason: str | None = None
+
+
+class LegalHoldRequest(CamelModel):
+    """Request body to set or clear a legal hold.
+
+    Attributes:
+        expected_version: Version the client last observed.
+        legal_hold: The desired legal-hold state.
+        reason: Optional reason recorded in the audit log.
+    """
+
+    expected_version: int
+    legal_hold: bool
+    reason: str | None = None
+
+
 class CommentRequest(CamelModel):
     """Request body to add a comment.
 
@@ -208,6 +256,17 @@ class TicketResponse(CamelModel):
     contract_number: str | None
     legal_due_at: datetime | None
     internal_due_at: datetime | None
+    sla_policy_version: str | None
+    decision_code: str | None
+    decision_summary: str | None
+    decision_text: str | None
+    decision_at: datetime | None
+    decision_by: uuid.UUID | None
+    closure_reason_code: str | None
+    closed_at: datetime | None
+    response_sent_at: datetime | None
+    no_response_reason: str | None
+    retention_until: date | None
     legal_hold: bool
     version: int
     applicants: list[ApplicantResponse]
@@ -344,6 +403,17 @@ def ticket_to_response(ticket: Ticket) -> TicketResponse:
         contract_number=ticket.contract_number,
         legal_due_at=ticket.legal_due_at,
         internal_due_at=ticket.internal_due_at,
+        sla_policy_version=ticket.sla_policy_version,
+        decision_code=ticket.decision_code,
+        decision_summary=ticket.decision_summary,
+        decision_text=ticket.decision_text,
+        decision_at=ticket.decision_at,
+        decision_by=ticket.decision_by,
+        closure_reason_code=ticket.closure_reason_code,
+        closed_at=ticket.closed_at,
+        response_sent_at=ticket.response_sent_at,
+        no_response_reason=ticket.no_response_reason,
+        retention_until=ticket.retention_until,
         legal_hold=ticket.legal_hold,
         version=ticket.version,
         applicants=[applicant_to_response(a) for a in ticket.applicants],

@@ -70,29 +70,44 @@ def _sample_payloads() -> dict[str, dict[str, Any]]:
             "ticketId": "018f7b3c-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
             "changedFields": ["subject", "contractNumber"],
         },
+        "ticket.decision_recorded.v1.json": {
+            "ticketId": "018f7b3c-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+            "decisionCode": "REJECTED",
+            "decisionAt": "2026-07-22T10:00:00Z",
+            "decisionBy": "22222222-3333-4444-5555-666666666666",
+        },
+        "ticket.closed.v1.json": {
+            "ticketId": "018f7b3c-1a2b-7c3d-8e4f-5a6b7c8d9e0f",
+            "closureReasonCode": "RESOLVED",
+            "closedAt": "2026-07-22T11:00:00Z",
+            "retentionUntil": "2031-07-22",
+        },
     }
 
 
-@pytest.mark.parametrize(
-    "filename", ["ticket.created.v1.json", "ticket.classified.v1.json", "ticket.updated.v1.json"]
-)
+_TICKET_EVENTS = [
+    "ticket.created.v1.json",
+    "ticket.classified.v1.json",
+    "ticket.updated.v1.json",
+    "ticket.decision_recorded.v1.json",
+    "ticket.closed.v1.json",
+]
+
+
+@pytest.mark.parametrize("filename", _TICKET_EVENTS)
 def test_payload_schema_is_valid(filename: str) -> None:
     """Each payload schema is itself a valid Draft 2020-12 schema."""
     Draft202012Validator.check_schema(_load(PAYLOAD_DIR / filename))
 
 
-@pytest.mark.parametrize(
-    "filename", ["ticket.created.v1.json", "ticket.classified.v1.json", "ticket.updated.v1.json"]
-)
+@pytest.mark.parametrize("filename", _TICKET_EVENTS)
 def test_sample_payload_validates(filename: str) -> None:
     """The representative sample payload conforms to its schema."""
     schema = _load(PAYLOAD_DIR / filename)
     Draft202012Validator(schema).validate(_sample_payloads()[filename])
 
 
-@pytest.mark.parametrize(
-    "filename", ["ticket.created.v1.json", "ticket.classified.v1.json", "ticket.updated.v1.json"]
-)
+@pytest.mark.parametrize("filename", _TICKET_EVENTS)
 def test_payload_in_envelope_validates(filename: str) -> None:
     """A payload wrapped in the shared envelope conforms to the envelope schema."""
     envelope_schema = _load(ENVELOPE_PATH)

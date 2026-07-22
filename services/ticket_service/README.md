@@ -5,18 +5,22 @@ parties attached to an appeal (consumer and representative), the business-config
 dictionaries, the business **registration number**, comments, and the appeal lifecycle use cases
 (manual registration, update, classification, comments, search).
 
-**Scope through TASK_01B (this increment):** the data model and registration number (TASK_01A) plus
-the use cases, search, and `ticket.*` events via the transactional outbox (TASK_01B). Decision,
-close, retention, SLA due-dates, and audit arrive in TASK_01C; authentication is provided later by
-IAM/BFF (TASK_01D/01E).
+**Scope through TASK_01C (this increment):** the data model and registration number (TASK_01A);
+use cases, search, and `ticket.*` events (TASK_01B); and decision, close validation, retention, SLA
+deadlines, the audit log, and legal hold (TASK_01C). Authentication is provided later by IAM/BFF
+(TASK_01D/01E).
 
 ## What it provides
 
 - The `domain` / `application` / `infrastructure` / `api` layering.
 - SQLAlchemy models: `ticket`, `ticket_applicant`, `dictionary_entry`, `registration_sequence`,
-  `ticket_comment`, `outbox_event`.
-- Use cases: `create_manual_ticket`, `update_ticket_details`, `classify_ticket`, `add_comment`,
-  `list_comments`, `search_tickets` (business logic lives in the application layer, not routes).
+  `ticket_comment`, `outbox_event`, `audit_log`.
+- Use cases: `create_manual_ticket`, `update_ticket_details`, `classify_ticket`, `record_decision`,
+  `close_ticket`, `set_legal_hold`, `add_comment`, `list_comments`, `search_tickets` (business logic
+  lives in the application layer, not routes).
+- SLA deadlines computed at registration from a versioned policy and a business calendar
+  (`internal_due_at`/`legal_due_at`, ADR-0005); close validation, five-year retention, and an audit
+  log of mutations.
 - A `RegistrationNumber` value object (`AP-YYYY-NNNNNN`) and a counter-backed allocator issuing
   unique, per-year numbers.
 - Pure lifecycle invariants (required registration fields; closure prerequisites; five-year
@@ -38,6 +42,9 @@ Base path `/api/v1`; JSON camelCase; RFC 7807 errors; `X-Correlation-ID`; optimi
 | GET | `/tickets/{id}` | Get the appeal card. |
 | PATCH | `/tickets/{id}` | Update card details (not status/stage/assignment). |
 | POST | `/tickets/{id}/classify` | Set product/classifier/priority. |
+| POST | `/tickets/{id}/decision` | Record the decision. |
+| POST | `/tickets/{id}/close` | Close after validating prerequisites; sets retention and terminal status. |
+| POST | `/tickets/{id}/legal-hold` | Place or lift a legal hold. |
 | POST/GET | `/tickets/{id}/comments` | Add/list comments. |
 
 Status, stage, and assignment are Flowable projections and are **not** editable through this API
@@ -52,6 +59,8 @@ Emitted via `outbox_event` (staged in the same transaction as the change) and re
 | `ticket.created.v1` | An appeal is registered | yes (identifier masked) |
 | `ticket.classified.v1` | Classification set/changed | no |
 | `ticket.updated.v1` | Card details change (carries changed-field names only) | yes |
+| `ticket.decision_recorded.v1` | A decision is recorded | no |
+| `ticket.closed.v1` | An appeal is closed | no |
 
 Payload schemas: [`contracts/events/payloads/`](../../contracts/events/payloads/). Full national
 identifiers never appear in events or logs — only a masked form (docs/06, Q-D3).
@@ -85,6 +94,15 @@ Environment variables (prefix `TICKET_`):
 | `TICKET_RABBITMQ_URL` | `amqp://guest:guest@localhost/` | AMQP URL used by the relay when enabled. |
 | `TICKET_RABBITMQ_EXCHANGE` | `appeals.events` | Topic exchange the relay publishes to. |
 | `TICKET_OUTBOX_RELAY_INTERVAL_SECONDS` | `2.0` | Delay between relay passes. |
+| `PLATFORM_TIMEZONE` | `Asia/Almaty` | Platform-wide business timezone for date/working-hours math (shared; storage stays UTC). Also readable as `TICKET_PLATFORM_TIMEZONE`. |
+
+## Time and SLA
+
+Timestamps are stored in UTC (ADR-003). Business dates and working-hours computation use the
+platform business timezone (Kazakhstan/Almaty, UTC+5) via `PLATFORM_TIMEZONE`; the retention date is
+computed from the closure instant in that timezone. SLA deadlines use a versioned policy
+(`v1-temp`: resolution 24h, regulatory term 15 calendar days) and a temporary 24/7 calendar, both
+behind interfaces for a later KZ working-hours/holiday calendar (ADR-0005, Q-C1).
 
 ## Registration number
 
@@ -97,7 +115,8 @@ monotonic sequence (for example `AP-2026-000001`). Uniqueness is guaranteed by l
 ## Migrations
 
 - **migration:** `0001` creates the core tables; `0003` adds `ticket_comment`, `outbox_event`, the
-  `contract_number`/`idempotency_key` ticket columns, and the search indexes.
+  `contract_number`/`idempotency_key` ticket columns, and the search indexes; `0004` adds the
+  `sla_policy_version`/`response_sent_at`/`no_response_reason` ticket columns and `audit_log`.
 - **backfill:** `0002` seeds draft reference dictionaries (Q-A1; codes are mapped later, not
   discarded).
 - **rollback:** `alembic downgrade base` drops the schema; `downgrade 0001` removes only the seed

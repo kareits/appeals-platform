@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.appeals-platform.local/events/ticket.decision_recorded.v1.json",
+  "title": "ticket.decision_recorded.v1 payload",
+  "description": "Payload of the ticket.decision_recorded.v1 event, emitted by ticket-service when a decision is recorded on an appeal. Carries no personal data (docs/06).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ticketId", "decisionCode", "decisionAt", "decisionBy"],
+  "properties": {
+    "ticketId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal ticket identifier (UUIDv7)."
+    },
+    "decisionCode": {
+      "type": "string",
+      "description": "Decision code (dictionary 'decision')."
+    },
+    "decisionAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when the decision was made."
+    },
+    "decisionBy": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identifier of the employee who recorded the decision."
+    }
+  }
+}

@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Response
@@ -19,15 +19,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
-from ticket_service.api.dependencies import get_allocator, get_session
+from ticket_service.api.dependencies import get_allocator, get_platform_timezone, get_session
 from ticket_service.api.schemas import (
     ApplicantModel,
     ClassifyRequest,
+    CloseTicketRequest,
     CommentRequest,
     CommentResponse,
     CreateTicketRequest,
+    LegalHoldRequest,
     PageMeta,
     PaginatedTickets,
+    RecordDecisionRequest,
     TicketResponse,
     UpdateTicketRequest,
     comment_to_response,
@@ -39,7 +42,10 @@ from ticket_service.application.commands import (
     AddCommentCommand,
     ApplicantInput,
     ClassifyTicketCommand,
+    CloseTicketCommand,
     CreateTicketCommand,
+    RecordDecisionCommand,
+    SetLegalHoldCommand,
     TicketSearchQuery,
     UpdateTicketCommand,
 )
@@ -307,6 +313,95 @@ async def classify_ticket(
     )
     async with _domain_errors():
         ticket = await use_cases.classify_ticket(session, command)
+        await session.commit()
+    return ticket_to_response(ticket)
+
+
+@router.post("/tickets/{ticket_id}/decision", response_model=TicketResponse)
+async def record_decision(
+    ticket_id: uuid.UUID,
+    body: RecordDecisionRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TicketResponse:
+    """Record the decision on an appeal.
+
+    Args:
+        ticket_id: The ticket identifier.
+        body: The decision request.
+        session: The unit-of-work session.
+
+    Returns:
+        The appeal card with the recorded decision.
+    """
+    command = RecordDecisionCommand(
+        ticket_id=ticket_id,
+        expected_version=body.expected_version,
+        decision_code=body.decision_code,
+        decision_text=body.decision_text,
+        decision_by=body.decision_by,
+        decision_summary=body.decision_summary,
+    )
+    async with _domain_errors():
+        ticket = await use_cases.record_decision(session, command)
+        await session.commit()
+    return ticket_to_response(ticket)
+
+
+@router.post("/tickets/{ticket_id}/close", response_model=TicketResponse)
+async def close_ticket(
+    ticket_id: uuid.UUID,
+    body: CloseTicketRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    timezone: Annotated[tzinfo, Depends(get_platform_timezone)],
+) -> TicketResponse:
+    """Close an appeal after validating the regulatory prerequisites.
+
+    Args:
+        ticket_id: The ticket identifier.
+        body: The closure request.
+        session: The unit-of-work session.
+        timezone: The business timezone used for the retention date.
+
+    Returns:
+        The closed appeal card.
+    """
+    command = CloseTicketCommand(
+        ticket_id=ticket_id,
+        expected_version=body.expected_version,
+        closure_reason_code=body.closure_reason_code,
+        response_sent_at=body.response_sent_at,
+        no_response_reason=body.no_response_reason,
+    )
+    async with _domain_errors():
+        ticket = await use_cases.close_ticket(session, command, timezone)
+        await session.commit()
+    return ticket_to_response(ticket)
+
+
+@router.post("/tickets/{ticket_id}/legal-hold", response_model=TicketResponse)
+async def set_legal_hold(
+    ticket_id: uuid.UUID,
+    body: LegalHoldRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TicketResponse:
+    """Set or clear the legal hold on an appeal.
+
+    Args:
+        ticket_id: The ticket identifier.
+        body: The legal-hold request.
+        session: The unit-of-work session.
+
+    Returns:
+        The appeal card with the updated legal-hold flag.
+    """
+    command = SetLegalHoldCommand(
+        ticket_id=ticket_id,
+        expected_version=body.expected_version,
+        legal_hold=body.legal_hold,
+        reason=body.reason,
+    )
+    async with _domain_errors():
+        ticket = await use_cases.set_legal_hold(session, command)
         await session.commit()
     return ticket_to_response(ticket)
 

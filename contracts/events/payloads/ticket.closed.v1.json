@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.appeals-platform.local/events/ticket.closed.v1.json",
+  "title": "ticket.closed.v1 payload",
+  "description": "Payload of the ticket.closed.v1 event, emitted by ticket-service when an appeal is closed. Carries no personal data (docs/06). Closure is an explicit, validated action; a sent response never closes a ticket on its own (docs/01, ADR-006).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ticketId", "closureReasonCode", "closedAt", "retentionUntil"],
+  "properties": {
+    "ticketId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal ticket identifier (UUIDv7)."
+    },
+    "closureReasonCode": {
+      "type": "string",
+      "description": "Closure-reason code (dictionary 'closure_reason')."
+    },
+    "closedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when the appeal was closed."
+    },
+    "retentionUntil": {
+      "type": "string",
+      "format": "date",
+      "description": "Earliest date the appeal becomes eligible for purge (at least five years)."
+    }
+  }
+}

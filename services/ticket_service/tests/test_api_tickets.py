@@ -132,3 +132,66 @@ async def test_idempotent_create_returns_200_on_replay(client: AsyncClient) -> N
     assert first.status_code == 201
     assert second.status_code == 200
     assert first.json()["id"] == second.json()["id"]
+
+
+async def test_decision_then_close_flow(client: AsyncClient) -> None:
+    """Registration, decision, and close succeed and set retention and terminal status."""
+    ticket_id = (await client.post("/api/v1/tickets", json=_create_body())).json()["id"]
+
+    decided = await client.post(
+        f"/api/v1/tickets/{ticket_id}/decision",
+        json={
+            "expectedVersion": 1,
+            "decisionCode": "REJECTED",
+            "decisionText": "Rationale",
+            "decisionBy": str(uuid.uuid4()),
+        },
+    )
+    assert decided.status_code == 200
+    assert decided.json()["version"] == 2
+
+    closed = await client.post(
+        f"/api/v1/tickets/{ticket_id}/close",
+        json={
+            "expectedVersion": 2,
+            "closureReasonCode": "RESOLVED",
+            "responseSentAt": "2026-07-23T09:00:00Z",
+        },
+    )
+    assert closed.status_code == 200
+    body = closed.json()
+    assert body["currentStatusCode"] == "COMPLETED"
+    assert body["retentionUntil"] is not None
+
+
+async def test_close_without_decision_returns_422(client: AsyncClient) -> None:
+    """Closing before a decision is recorded yields an RFC 7807 422."""
+    ticket_id = (await client.post("/api/v1/tickets", json=_create_body())).json()["id"]
+
+    response = await client.post(
+        f"/api/v1/tickets/{ticket_id}/close",
+        json={"expectedVersion": 1, "closureReasonCode": "RESOLVED", "noResponseReason": "n/a"},
+    )
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_set_legal_hold(client: AsyncClient) -> None:
+    """A legal hold can be placed via the API."""
+    ticket_id = (await client.post("/api/v1/tickets", json=_create_body())).json()["id"]
+
+    response = await client.post(
+        f"/api/v1/tickets/{ticket_id}/legal-hold",
+        json={"expectedVersion": 1, "legalHold": True, "reason": "Litigation"},
+    )
+    assert response.status_code == 200
+    assert response.json()["legalHold"] is True
+
+
+async def test_create_sets_sla_due_dates(client: AsyncClient) -> None:
+    """Registration computes and returns the SLA deadlines and policy version."""
+    body = (await client.post("/api/v1/tickets", json=_create_body())).json()
+
+    assert body["internalDueAt"] is not None
+    assert body["legalDueAt"] is not None
+    assert body["slaPolicyVersion"] == "v1-temp"

@@ -56,6 +56,13 @@ breaking payload change increments the `.vN` suffix):
   the list of changed field names only (values are not carried, to avoid leaking personal data);
   consumers re-read the card. **PII: yes** (changed-field names may reference personal-data fields).
 
+**Implemented in TASK_01C** (same delivery/idempotency/versioning guarantees):
+
+- [`ticket.decision_recorded.v1`](payloads/ticket.decision_recorded.v1.json) — trigger: a decision
+  is recorded. Payload: decision code, timestamp, and author. PII: no.
+- [`ticket.closed.v1`](payloads/ticket.closed.v1.json) — trigger: an appeal is closed. Payload:
+  closure reason, closure timestamp, and retention date. PII: no.
+
 ### process.* — producer: process-adapter
 
 | Event | Trigger | Consumers (initial) |

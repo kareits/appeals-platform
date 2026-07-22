@@ -8,10 +8,12 @@ on any error, so a failed request never persists a partial change.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import tzinfo
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ticket_service.domain.timezone import resolve_timezone
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
 
 
@@ -42,3 +44,15 @@ def get_allocator(request: Request) -> RegistrationNumberAllocator:
     """
     allocator: RegistrationNumberAllocator = request.app.state.registration_allocator
     return allocator
+
+
+def get_platform_timezone(request: Request) -> tzinfo:
+    """Return the configured platform business timezone.
+
+    Args:
+        request: The incoming request.
+
+    Returns:
+        The resolved business timezone (default Asia/Almaty) used for business-date computation.
+    """
+    return resolve_timezone(request.app.state.settings.platform_timezone)

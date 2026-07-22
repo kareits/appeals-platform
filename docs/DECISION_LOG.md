@@ -119,7 +119,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
   timers are part of the process (Flowable); notifications belong to Notification.
 - **Consequences:** a business-calendar module and versioned SLA policy are needed in Ticket
   Service; breach is emitted as `ticket.deadline_breached.v1`.
-- **Status:** accepted. **Full ADR:** yes — `ADR-SLA-CALENDAR` at TASK_01C/TASK_02.
+- **Status:** accepted. **Full ADR:** yes — [`docs/adr/ADR-0005-sla-and-business-calendar.md`](adr/ADR-0005-sla-and-business-calendar.md) (SLA policy + business calendar + platform timezone).
 
 ## ADR-010. Completeness check is a human task in MVP
 
@@ -212,7 +212,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-0002 (language-policy) | English-only code/docs, Google docstrings, doc coverage | TASK_00A | Written |
 | ADR-0003 (vendor-neutral-naming) | No `solva` in code identifiers; `mfo` prefix | TASK_00A | Written |
 | ADR-0004 (event-catalog) | Single event catalog + envelope JSON Schema, versioning | TASK_00C | Written |
-| ADR-SLA-CALENDAR | SLA policy + KZ business calendar, due_at computation | TASK_01C / TASK_02 |
+| ADR-0005 (sla-calendar) | SLA policy + business calendar + platform timezone, due_at computation | TASK_01C | Written |
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
 | ADR-STORAGE-MIGRATION | Dual-read and file migration to GridFS | TASK_03B | Pending |

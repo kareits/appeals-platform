@@ -34,6 +34,12 @@ TICKET_CLASSIFIED = "ticket.classified.v1"
 TICKET_UPDATED = "ticket.updated.v1"
 """Event type emitted when appeal-card details change."""
 
+TICKET_DECISION_RECORDED = "ticket.decision_recorded.v1"
+"""Event type emitted when a decision is recorded."""
+
+TICKET_CLOSED = "ticket.closed.v1"
+"""Event type emitted when an appeal is closed."""
+
 
 @dataclass(frozen=True)
 class Event:
@@ -207,6 +213,42 @@ def ticket_updated_event(ticket_id: uuid.UUID, changed_fields: list[str]) -> Eve
     """
     payload = {"ticketId": str(ticket_id), "changedFields": changed_fields}
     return _new_event(TICKET_UPDATED, ticket_id, payload)
+
+
+def ticket_decision_recorded_event(ticket: Ticket) -> Event:
+    """Build the ``ticket.decision_recorded.v1`` event.
+
+    Args:
+        ticket: The ticket whose decision was recorded (decision fields populated).
+
+    Returns:
+        The decision-recorded event.
+    """
+    payload = {
+        "ticketId": str(ticket.id),
+        "decisionCode": ticket.decision_code,
+        "decisionAt": _iso(ticket.decision_at) if ticket.decision_at else None,
+        "decisionBy": str(ticket.decision_by) if ticket.decision_by else None,
+    }
+    return _new_event(TICKET_DECISION_RECORDED, ticket.id, payload)
+
+
+def ticket_closed_event(ticket: Ticket) -> Event:
+    """Build the ``ticket.closed.v1`` event.
+
+    Args:
+        ticket: The closed ticket (closure and retention fields populated).
+
+    Returns:
+        The closed event.
+    """
+    payload = {
+        "ticketId": str(ticket.id),
+        "closureReasonCode": ticket.closure_reason_code,
+        "closedAt": _iso(ticket.closed_at) if ticket.closed_at else None,
+        "retentionUntil": ticket.retention_until.isoformat() if ticket.retention_until else None,
+    }
+    return _new_event(TICKET_CLOSED, ticket.id, payload)
 
 
 def _iso(value: datetime) -> str:

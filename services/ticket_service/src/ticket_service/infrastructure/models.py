@@ -68,6 +68,7 @@ class Ticket(Base):
         current_assignee_id: Responsible employee, assigned by Flowable (nullable).
         legal_due_at: Regulatory deadline (nullable, ADR-009).
         internal_due_at: Internal SLA deadline (nullable, ADR-009).
+        sla_policy_version: Version of the SLA policy that computed the deadlines (ADR-009).
         decision_code: Decision code (dictionary ``decision``), set before closure.
         decision_summary: Short decision summary, set before closure.
         decision_text: Full decision text, set before closure.
@@ -75,6 +76,8 @@ class Ticket(Base):
         decision_by: Employee who recorded the decision.
         closure_reason_code: Closure-reason code (dictionary ``closure_reason``), set at closure.
         closed_at: When the ticket was closed (nullable; not set automatically by a sent response).
+        response_sent_at: When a response was sent to the customer, if any (closure evidence).
+        no_response_reason: Justification recorded at closure when no response was sent.
         retention_until: Earliest purge-eligible date, set at closure (docs/01 retention).
         legal_hold: Whether the ticket is under legal hold and exempt from purge.
         version: Optimistic-locking version, managed by SQLAlchemy.
@@ -123,6 +126,7 @@ class Ticket(Base):
 
     legal_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     internal_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_policy_version: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
 
     decision_code: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
     decision_summary: Mapped[str | None] = mapped_column(String(_SHORT_TEXT_LEN), nullable=True)
@@ -132,6 +136,10 @@ class Ticket(Base):
 
     closure_reason_code: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    no_response_reason: Mapped[str | None] = mapped_column(String(_SHORT_TEXT_LEN), nullable=True)
 
     retention_until: Mapped[date | None] = mapped_column(Date(), nullable=True)
     legal_hold: Mapped[bool] = mapped_column(Boolean(), default=False)
@@ -321,3 +329,36 @@ class OutboxEvent(Base):
     payload: Mapped[dict[str, object]] = mapped_column(JSON())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditLog(Base):
+    """An append-only record of a significant, auditable action (docs/06).
+
+    The ticket service records mutations it owns — registration, updates, classification, decisions,
+    closure, and legal-hold changes. Entries never contain full national identifiers or other
+    unmasked personal data (docs/06); ``details`` holds only non-sensitive context.
+
+    Attributes:
+        id: Internal UUIDv7 primary key.
+        entity_type: The kind of entity acted upon (for example, ``ticket``).
+        entity_id: Identifier of the entity acted upon.
+        action: The audited action code (for example, ``ticket.closed``).
+        actor_id: Identifier of the actor who performed the action, if known.
+        occurred_at: Server-assigned timestamp of the action.
+        correlation_id: Correlation identifier tying the action to a request, if any.
+        details: Non-sensitive structured context (no unmasked personal data).
+    """
+
+    __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_log_entity", "entity_type", "entity_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid7)
+    entity_type: Mapped[str] = mapped_column(String(_CODE_LEN))
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid())
+    action: Mapped[str] = mapped_column(String(_CODE_LEN))
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    correlation_id: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
+    details: Mapped[dict[str, object] | None] = mapped_column(JSON(), nullable=True)

@@ -44,6 +44,9 @@ def test_expected_operations_present() -> None:
         "getTicket",
         "updateTicketDetails",
         "classifyTicket",
+        "recordDecision",
+        "closeTicket",
+        "setLegalHold",
         "addComment",
         "listComments",
     } <= operation_ids

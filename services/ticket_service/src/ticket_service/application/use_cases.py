@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,12 +19,23 @@ from ticket_service.application.commands import (
     AddCommentCommand,
     ApplicantInput,
     ClassifyTicketCommand,
+    CloseTicketCommand,
     CreateTicketCommand,
+    RecordDecisionCommand,
+    SetLegalHoldCommand,
     TicketSearchQuery,
     UpdateTicketCommand,
 )
 from ticket_service.application.errors import TicketNotFoundError, VersionConflictError
-from ticket_service.domain.invariants import check_registration_fields
+from ticket_service.domain.invariants import (
+    ClosureState,
+    check_can_close,
+    check_registration_fields,
+    resolve_retention_until,
+)
+from ticket_service.domain.sla import DEFAULT_SLA_POLICY, compute_due_dates
+from ticket_service.infrastructure import audit
+from ticket_service.infrastructure.audit import AuditRepository
 from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
 from ticket_service.infrastructure.outbox import OutboxRepository
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
@@ -34,6 +45,11 @@ from ticket_service.infrastructure.repositories import CommentRepository, Ticket
 # the Flowable projection later (EP-3); in EP-1 they hold these placeholders (IMPLEMENTATION_PLAN).
 DEFAULT_STATUS_CODE = "NEW"
 DEFAULT_STAGE_CODE = "REGISTRATION"
+
+# Terminal codes set by the close use case. In EP-1 the ticket service performs the close directly
+# (a placeholder projection); Flowable drives interim statuses later (IMPLEMENTATION_PLAN).
+CLOSED_STATUS_CODE = "COMPLETED"
+CLOSED_STAGE_CODE = "CLOSED"
 
 # Card fields an update may change. Status, stage, and assignment are deliberately excluded.
 _UPDATABLE_FIELDS = ("subject", "description", "source_channel_code", "contract_number")
@@ -95,6 +111,8 @@ async def create_manual_ticket(
 
     now = datetime.now(UTC)
     number = await allocator.allocate(session, at=now)
+    # Ticket Service owns SLA deadlines; compute them from the received time (ADR-009/ADR-0005).
+    due = compute_due_dates(command.received_at)
     ticket = Ticket(
         registration_number=number.format(),
         idempotency_key=command.idempotency_key,
@@ -109,6 +127,9 @@ async def create_manual_ticket(
         priority_code=command.priority_code,
         current_status_code=DEFAULT_STATUS_CODE,
         current_stage_code=DEFAULT_STAGE_CODE,
+        internal_due_at=due.internal_due_at,
+        legal_due_at=due.legal_due_at,
+        sla_policy_version=DEFAULT_SLA_POLICY.version,
     )
     check_registration_fields(
         {
@@ -136,6 +157,11 @@ async def create_manual_ticket(
 
     await outbox.enqueue(
         events.ticket_created_event(ticket, consumer, command.representative is not None)
+    )
+    AuditRepository(session).record(
+        entity_id=ticket.id,
+        action=audit.ACTION_REGISTERED,
+        details={"registrationNumber": ticket.registration_number},
     )
     return ticket, True
 
@@ -170,6 +196,9 @@ async def update_ticket_details(session: AsyncSession, command: UpdateTicketComm
 
     await session.flush()
     await OutboxRepository(session).enqueue(events.ticket_updated_event(ticket.id, changed))
+    AuditRepository(session).record(
+        entity_id=ticket.id, action=audit.ACTION_UPDATED, details={"changedFields": changed}
+    )
     return ticket
 
 
@@ -193,6 +222,128 @@ async def classify_ticket(session: AsyncSession, command: ClassifyTicketCommand)
     ticket.priority_code = command.priority_code
     await session.flush()
     await OutboxRepository(session).enqueue(events.ticket_classified_event(ticket))
+    AuditRepository(session).record(
+        entity_id=ticket.id,
+        action=audit.ACTION_CLASSIFIED,
+        details={"classifierCode": ticket.classifier_code, "productCode": ticket.product_code},
+    )
+    return ticket
+
+
+async def record_decision(session: AsyncSession, command: RecordDecisionCommand) -> Ticket:
+    """Record the decision on an appeal and stage ``ticket.decision_recorded.v1``.
+
+    Args:
+        session: The active unit-of-work session.
+        command: The decision input.
+
+    Returns:
+        The ticket with the decision recorded.
+
+    Raises:
+        TicketNotFoundError: If the ticket does not exist.
+        VersionConflictError: If ``expected_version`` does not match the stored version.
+    """
+    ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+    ticket.decision_code = command.decision_code
+    ticket.decision_summary = command.decision_summary
+    ticket.decision_text = command.decision_text
+    ticket.decision_by = command.decision_by
+    ticket.decision_at = datetime.now(UTC)
+    await session.flush()
+    await OutboxRepository(session).enqueue(events.ticket_decision_recorded_event(ticket))
+    AuditRepository(session).record(
+        entity_id=ticket.id,
+        action=audit.ACTION_DECISION_RECORDED,
+        actor_id=command.decision_by,
+        details={"decisionCode": ticket.decision_code},
+    )
+    return ticket
+
+
+async def close_ticket(
+    session: AsyncSession, command: CloseTicketCommand, tz: tzinfo | None = None
+) -> Ticket:
+    """Close an appeal after validating the regulatory prerequisites.
+
+    Verifies that a decision, decision text, responsible employee, decision date, a response date
+    or a justified absence of response, and a closure reason are present (docs/01), then sets the
+    closure fields, the retention date (at least five years, computed in the business timezone), and
+    the terminal status. Stages ``ticket.closed.v1``.
+
+    Args:
+        session: The active unit-of-work session.
+        command: The closure input.
+        tz: The business timezone for the retention date; defaults to Asia/Almaty.
+
+    Returns:
+        The closed ticket.
+
+    Raises:
+        TicketNotFoundError: If the ticket does not exist.
+        VersionConflictError: If ``expected_version`` does not match the stored version.
+        TicketInvariantError: If a closure prerequisite is unmet.
+    """
+    ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+    check_can_close(
+        ClosureState(
+            decision_code=ticket.decision_code,
+            decision_text=ticket.decision_text,
+            decision_at=ticket.decision_at,
+            decision_by=ticket.decision_by,
+            response_sent_at=command.response_sent_at,
+            no_response_reason=command.no_response_reason,
+            closure_reason_code=command.closure_reason_code,
+        )
+    )
+
+    closed_at = datetime.now(UTC)
+    ticket.closure_reason_code = command.closure_reason_code
+    ticket.response_sent_at = command.response_sent_at
+    ticket.no_response_reason = command.no_response_reason
+    ticket.closed_at = closed_at
+    ticket.retention_until = resolve_retention_until(closed_at, tz)
+    ticket.current_status_code = CLOSED_STATUS_CODE
+    ticket.current_stage_code = CLOSED_STAGE_CODE
+    await session.flush()
+    await OutboxRepository(session).enqueue(events.ticket_closed_event(ticket))
+    AuditRepository(session).record(
+        entity_id=ticket.id,
+        action=audit.ACTION_CLOSED,
+        actor_id=command.actor_id,
+        details={
+            "closureReasonCode": ticket.closure_reason_code,
+            "retentionUntil": ticket.retention_until.isoformat()
+            if ticket.retention_until
+            else None,
+        },
+    )
+    return ticket
+
+
+async def set_legal_hold(session: AsyncSession, command: SetLegalHoldCommand) -> Ticket:
+    """Place or lift a legal hold on an appeal and audit the change.
+
+    Args:
+        session: The active unit-of-work session.
+        command: The legal-hold input.
+
+    Returns:
+        The updated ticket.
+
+    Raises:
+        TicketNotFoundError: If the ticket does not exist.
+        VersionConflictError: If ``expected_version`` does not match the stored version.
+    """
+    ticket = await _load_for_write(session, command.ticket_id, command.expected_version)
+    ticket.legal_hold = command.legal_hold
+    await session.flush()
+    AuditRepository(session).record(
+        entity_id=ticket.id,
+        action=audit.ACTION_LEGAL_HOLD_SET,
+        actor_id=command.actor_id,
+        details={"legalHold": command.legal_hold, "reason": command.reason},
+    )
     return ticket
 
 

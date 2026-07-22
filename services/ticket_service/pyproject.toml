@@ -17,6 +17,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "asyncpg>=0.30",
     "aio-pika>=9.4",
+    "tzdata>=2024.1",
     "mfo-observability",
     "mfo-http",
 ]

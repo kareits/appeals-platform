@@ -6,8 +6,9 @@ Structured map of the ticket service. Kept current as behavior changes (Definiti
 ## Responsibility
 
 Regulatory registry and appeal card: the ticket model, applicants/representatives, reference
-dictionaries, comments, classification, decision, closure, and retention. Does not own mail
-delivery, files, Flowable history, or corporate credentials.
+dictionaries, comments, classification, decision, closure, retention, SLA deadlines (ADR-009/0005),
+and the audit log of owned mutations. Does not own mail delivery, files, Flowable history, or
+corporate credentials.
 
 ## Owned data
 
@@ -20,6 +21,7 @@ delivery, files, Flowable history, or corporate credentials.
   `(dictionary_type, code)`.
 - `registration_sequence` — per-year counter backing registration-number allocation.
 - `outbox_event` — transactional outbox rows staged for publication.
+- `audit_log` — append-only audit entries for owned mutations (no unmasked personal data).
 
 ## API
 
@@ -36,6 +38,9 @@ Base path `/api/v1`; camelCase; RFC 7807; `X-Correlation-ID`; optimistic locking
 | GET | `/api/v1/tickets/{id}` | Get an appeal card | none |
 | PATCH | `/api/v1/tickets/{id}` | Update card details | none |
 | POST | `/api/v1/tickets/{id}/classify` | Set classification | none |
+| POST | `/api/v1/tickets/{id}/decision` | Record the decision | none |
+| POST | `/api/v1/tickets/{id}/close` | Close (validated); sets retention/terminal status | none |
+| POST | `/api/v1/tickets/{id}/legal-hold` | Place or lift a legal hold | none |
 | POST | `/api/v1/tickets/{id}/comments` | Add a comment | none |
 | GET | `/api/v1/tickets/{id}/comments` | List comments | none |
 
@@ -46,9 +51,10 @@ Via the transactional outbox (`outbox_event`) and RabbitMQ relay:
 - `ticket.created.v1` — an appeal is registered (identifier masked).
 - `ticket.classified.v1` — classification set or changed.
 - `ticket.updated.v1` — card details change (changed-field names only).
+- `ticket.decision_recorded.v1` — a decision is recorded.
+- `ticket.closed.v1` — an appeal is closed (with retention date).
 
-`ticket.decision_recorded.v1` / `ticket.closed.v1` follow in TASK_01C. Payload schemas:
-`contracts/events/payloads/`.
+Payload schemas: `contracts/events/payloads/`.
 
 ## Consumed events
 
@@ -71,15 +77,15 @@ None yet. Flowable projection events (`process.*`) are consumed from TASK_02D.
 
 ## Migrations
 
-Alembic; latest revision `0003`.
+Alembic; latest revision `0004`.
 
 - **migration:** `0001` core tables; `0003` comments, outbox, `contract_number`/`idempotency_key`,
-  and search indexes.
+  and search indexes; `0004` closure/SLA ticket columns and `audit_log`.
 - **backfill:** `0002` seeds draft reference dictionaries (Q-A1).
 - **rollback:** `downgrade base` drops the schema; `downgrade 0001` removes only seed rows; no
   regulatory data is deleted.
-- **validation:** `test_migration` (apply/seed/rollback incl. `ticket_comment`/`outbox_event`) and
-  `test_models` (unique number, nullable demographics, optimistic locking).
+- **validation:** `test_migration` (apply/seed/rollback incl. `ticket_comment`/`outbox_event`/
+  `audit_log`) and `test_models` (unique number, nullable demographics, optimistic locking).
 
 ## Testing
 

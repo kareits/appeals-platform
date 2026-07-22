@@ -71,6 +71,7 @@ def test_migrations_upgrade_create_schema_and_seed(tmp_path: Path) -> None:
         "registration_sequence",
         "ticket_comment",
         "outbox_event",
+        "audit_log",
     ):
         assert _table_exists(db_path, table)
     # Statuses are seeded verbatim from docs/01 (seven values); the full seed set is larger.
@@ -92,6 +93,7 @@ def test_migrations_downgrade_removes_schema(tmp_path: Path) -> None:
         "registration_sequence",
         "ticket_comment",
         "outbox_event",
+        "audit_log",
     ):
         assert not _table_exists(db_path, table)
 

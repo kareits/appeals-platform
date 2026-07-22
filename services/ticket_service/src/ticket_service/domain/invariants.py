@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
+
+from ticket_service.domain.timezone import to_business_date
 
 
 class TicketInvariantError(ValueError):
@@ -127,21 +129,24 @@ def check_can_close(state: ClosureState) -> None:
         )
 
 
-def resolve_retention_until(closed_at: datetime, retention_years: int = 5) -> date:
+def resolve_retention_until(
+    closed_at: datetime, tz: tzinfo | None = None, retention_years: int = 5
+) -> date:
     """Compute the regulatory retention date for a closed ticket.
 
-    Appeals are retained for at least five years after closure (docs/01 "Хранение"). The exact
-    calendar policy (KZ business calendar) is refined later (Q-C1); here retention is computed as a
-    whole-year offset from the closure date.
+    Appeals are retained for at least five years after closure (docs/01 "Хранение"). The closure
+    date is taken in the platform business timezone (Kazakhstan/Almaty, UTC+5) even though the
+    instant is stored in UTC, so a late-evening closure is not counted against the previous day.
 
     Args:
-        closed_at: The timestamp the ticket was closed.
+        closed_at: The timestamp the ticket was closed (UTC in storage).
+        tz: The business timezone; defaults to Asia/Almaty.
         retention_years: The minimum retention period in years (defaults to the regulatory five).
 
     Returns:
         The earliest date on which the ticket becomes eligible for purge.
     """
-    closed_date = closed_at.date()
+    closed_date = to_business_date(closed_at, tz)
     target_year = closed_date.year + retention_years
     try:
         return closed_date.replace(year=target_year)

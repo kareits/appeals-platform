@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
         rabbitmq_url: AMQP connection URL used by the outbox relay when enabled.
         rabbitmq_exchange: Topic exchange the relay publishes events to.
         outbox_relay_interval_seconds: Delay between outbox relay passes.
+        platform_timezone: IANA business timezone for date/working-hours computation (retention
+            dates, SLA calendars). Timestamps are stored in UTC (ADR-003); this only affects
+            business-date math. Read from the platform-wide ``PLATFORM_TIMEZONE`` variable (shared
+            across services) or the service-scoped ``TICKET_PLATFORM_TIMEZONE``.
     """
 
     model_config = SettingsConfigDict(env_prefix="TICKET_", env_file=".env", extra="ignore")
@@ -37,6 +42,10 @@ class Settings(BaseSettings):
     rabbitmq_url: str = "amqp://guest:guest@localhost/"
     rabbitmq_exchange: str = "appeals.events"
     outbox_relay_interval_seconds: float = 2.0
+    platform_timezone: str = Field(
+        default="Asia/Almaty",
+        validation_alias=AliasChoices("PLATFORM_TIMEZONE", "TICKET_PLATFORM_TIMEZONE"),
+    )
 
 
 @lru_cache
