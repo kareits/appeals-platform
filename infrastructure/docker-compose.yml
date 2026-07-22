@@ -22,6 +22,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       DEMO_DB_PASSWORD: ${DEMO_DB_PASSWORD:-demo}
       FLOWABLE_DB_PASSWORD: ${FLOWABLE_DB_PASSWORD:-flowable}
+      IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:-iam}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -98,6 +99,55 @@ services:
     volumes:
       # Placeholder persistent file volume for the future Document Service.
       - file-data:/var/lib/appeals/files
+    networks:
+      - backend
+
+  # One-shot migration job: brings the IAM schema to head before the API starts, so API replicas
+  # never run migrations themselves and never serve an un-migrated database (CR-IAM-HIGH-001).
+  iam_migrate:
+    build:
+      context: ..
+      dockerfile: services/iam_service/Dockerfile
+    command: ["sh", "-c", "cd /app/services/iam_service && alembic upgrade head"]
+    environment:
+      IAM_ENVIRONMENT: local
+      IAM_DATABASE_URL: postgresql+asyncpg://iam:${IAM_DB_PASSWORD:-iam}@postgres:5432/iam_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - backend
+
+  iam_service:
+    build:
+      context: ..
+      dockerfile: services/iam_service/Dockerfile
+    environment:
+      # Dev auth is available only for the closed environment allowlist (local/dev/test); this local
+      # compose stack uses "local" so seeded dev login works (CR-IAM-HIGH-002).
+      IAM_ENVIRONMENT: local
+      IAM_DATABASE_URL: postgresql+asyncpg://iam:${IAM_DB_PASSWORD:-iam}@postgres:5432/iam_service
+      # Dev-only symmetric secret for the temporary dev/local auth (docs/06). Never a real secret;
+      # production moves to corporate OIDC (ADR-AUTH-OIDC, TASK_06).
+      IAM_JWT_SECRET: ${IAM_JWT_SECRET:-dev-insecure-secret-change-me-please}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      iam_migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # Readiness (not liveness) so the container is healthy only once the schema is usable.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # No published ports: reached only on the internal network (and via the future BFF).
     networks:
       - backend
 

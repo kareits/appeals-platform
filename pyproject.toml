@@ -20,6 +20,7 @@ members = [
     "services/demo_service",
     "services/process_adapter",
     "services/ticket_service",
+    "services/iam_service",
 ]
 
 [tool.uv.sources]
@@ -73,6 +74,7 @@ mypy_path = [
     "services/demo_service/src",
     "services/process_adapter/src",
     "services/ticket_service/src",
+    "services/iam_service/src",
 ]
 exclude = ['(^|/)migrations/']
 

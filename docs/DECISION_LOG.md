@@ -213,6 +213,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-0003 (vendor-neutral-naming) | No `solva` in code identifiers; `mfo` prefix | TASK_00A | Written |
 | ADR-0004 (event-catalog) | Single event catalog + envelope JSON Schema, versioning | TASK_00C | Written |
 | ADR-0005 (sla-calendar) | SLA policy + business calendar + platform timezone, due_at computation | TASK_01C | Written |
+| ADR-0006 (dev-auth-authorization) | Dev/local JWT auth, bcrypt hashing, and the role→permission matrix (per-service enforcement) | TASK_01D | Written |
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
 | ADR-STORAGE-MIGRATION | Dual-read and file migration to GridFS | TASK_03B | Pending |

@@ -1,0 +1,326 @@
+openapi: 3.1.0
+info:
+  title: IAM Service API
+  version: "1.0.0"
+  description: >-
+    Identity and access API of the MFO Appeals Platform. Owns users, roles, teams, and the
+    authorization matrix, and issues permission claims for downstream services (TASK_01D).
+    Authentication is a temporary dev/local scheme available outside production only (docs/06):
+    POST /auth/login returns a signed access token whose claims carry the subject's roles and
+    resolved permissions. Conventions (docs/05): base path /api/v1, JSON with camelCase fields,
+    ISO-8601 UTC timestamps, RFC 7807 Problem Details for errors, X-Correlation-ID propagation.
+    Corporate OIDC replaces the dev scheme later (ADR-AUTH-OIDC, TASK_06).
+servers:
+  - url: /api/v1
+    description: Versioned base path (mounted by the service).
+tags:
+  - name: auth
+    description: Dev/local authentication and the current subject's claims.
+  - name: users
+    description: User and role administration (requires the iam:manage permission).
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: devLogin
+      summary: Authenticate with the dev/local scheme.
+      description: >-
+        Verifies a username and password against the stored bcrypt hash and returns a signed access
+        token carrying the subject's roles and resolved permissions. Available outside production
+        only; returns 403 when dev authentication is disabled. Records an authentication audit
+        entry.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication succeeded; an access token is returned.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentSubject
+      summary: Return the current subject's claims.
+      description: >-
+        Decodes the bearer access token and returns the subject, username, roles, and permissions it
+        carries. Used by the BFF to build the auth context.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The current subject's claims.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubjectResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+  /users:
+    post:
+      tags: [users]
+      operationId: createUser
+      summary: Create a user.
+      description: >-
+        Creates a user with hashed credentials and initial role grants. Requires the iam:manage
+        permission. The action and the granted roles are audited.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: The user was created.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /users/{userId}:
+    get:
+      tags: [users]
+      operationId: getUser
+      summary: Fetch a user.
+      description: Returns a user with role grants and resolved permissions. Requires iam:manage.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+  /users/{userId}/roles:
+    post:
+      tags: [users]
+      operationId: assignRole
+      summary: Grant a role to a user.
+      description: >-
+        Grants a role to a user (idempotent). Requires iam:manage. An actual change is audited.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRoleRequest'
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /users/{userId}/roles/{role}:
+    delete:
+      tags: [users]
+      operationId: revokeRole
+      summary: Revoke a role from a user.
+      description: >-
+        Revokes a role from a user (idempotent). Requires iam:manage. An actual change is audited.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/UserId'
+        - name: role
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/Role'}
+          description: The role to revoke.
+      responses:
+        '200':
+          description: The updated user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Signed access token issued by POST /auth/login.
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+      description: Internal user identifier (UUIDv7).
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: {type: string}
+      description: Correlation identifier propagated across services; generated when absent.
+  headers:
+    CorrelationId:
+      schema: {type: string}
+      description: Correlation identifier for this request.
+  responses:
+    Problem:
+      description: An RFC 7807 Problem Details error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    Role:
+      type: string
+      description: A platform role assignable to a user.
+      enum:
+        [EMPLOYEE, SUPERVISOR, FIRST_LINE_READONLY, OMBUDSMAN, ANALYST, ADMIN, AUDITOR]
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 255, description: Login handle.}
+        password: {type: string, minLength: 1, maxLength: 72, description: Plaintext password (dev/local scheme).}
+    TokenResponse:
+      type: object
+      description: A signed access token and the claims it carries.
+      required: [accessToken, tokenType, expiresIn, subject, username, roles, permissions]
+      properties:
+        accessToken: {type: string, description: The signed JWT access token.}
+        tokenType: {type: string, enum: [Bearer], description: The token type (always Bearer).}
+        expiresIn: {type: integer, description: Token lifetime in seconds.}
+        subject: {type: string, format: uuid, description: The authenticated user's identifier.}
+        username: {type: string, description: The authenticated user's login handle.}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/Role'}
+          description: The user's granted roles.
+        permissions:
+          type: array
+          items: {type: string}
+          description: Permission claims resolved from the user's roles.
+    SubjectResponse:
+      type: object
+      description: The claims of the currently authenticated subject.
+      required: [subject, username, roles, permissions]
+      properties:
+        subject: {type: string, format: uuid, description: The subject's identifier.}
+        username: {type: string, description: The subject's login handle.}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/Role'}
+          description: The subject's granted roles.
+        permissions:
+          type: array
+          items: {type: string}
+          description: The subject's resolved permission claims.
+    CreateUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, fullName, password]
+      properties:
+        username: {type: string, minLength: 1, maxLength: 255, description: Unique login handle.}
+        fullName: {type: string, minLength: 1, maxLength: 255, description: Display name.}
+        password: {type: string, minLength: 8, maxLength: 72, description: Initial plaintext password (hashed before storage).}
+        email: {type: [string, "null"], minLength: 1, maxLength: 255, description: Optional contact email.}
+        teamId: {type: [string, "null"], format: uuid, description: Optional owning team.}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/Role'}
+          description: Initial role grants (may be empty).
+    AssignRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: {$ref: '#/components/schemas/Role'}
+    UserResponse:
+      type: object
+      description: A user with role grants and resolved permissions.
+      required: [id, username, fullName, email, isActive, teamId, roles, permissions, version]
+      properties:
+        id: {type: string, format: uuid, description: Internal user identifier.}
+        username: {type: string, description: Login handle.}
+        fullName: {type: string, description: Display name.}
+        email: {type: [string, "null"], description: Contact email.}
+        isActive: {type: boolean, description: Whether the account may authenticate.}
+        teamId: {type: [string, "null"], format: uuid, description: Owning team, if any.}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/Role'}
+          description: Granted roles.
+        permissions:
+          type: array
+          items: {type: string}
+          description: Permission claims resolved from the granted roles.
+        version: {type: integer, description: Optimistic-locking version.}
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details.
+      required: [title, status]
+      properties:
+        type: {type: string, default: 'about:blank'}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: [string, "null"]}
+        instance: {type: [string, "null"]}
