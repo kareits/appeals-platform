@@ -43,6 +43,19 @@ are masked; full identifiers are never placed in payloads or logs).
 | `ticket.deadline_breached.v1` | An internal/regulatory deadline is breached | notification, reporting | no |
 | `ticket.deadline_warning.v1` | A deadline is approaching (proposed) | notification | no |
 
+**Implemented in TASK_01B** (payload schemas under [`payloads/`](payloads/); delivery at-least-once
+via the transactional outbox; consumers idempotent on `eventId`; versioning per ADR-0004 — a
+breaking payload change increments the `.vN` suffix):
+
+- [`ticket.created.v1`](payloads/ticket.created.v1.json) — trigger: an appeal is registered.
+  Payload: registry summary of the new ticket. **PII: yes** — the national identifier appears only
+  masked (`identifierMasked`); the full identifier is never emitted.
+- [`ticket.classified.v1`](payloads/ticket.classified.v1.json) — trigger: product/classifier/
+  priority set or changed. Payload: the classification codes. PII: no.
+- [`ticket.updated.v1`](payloads/ticket.updated.v1.json) — trigger: card details change. Payload:
+  the list of changed field names only (values are not carried, to avoid leaking personal data);
+  consumers re-read the card. **PII: yes** (changed-field names may reference personal-data fields).
+
 ### process.* — producer: process-adapter
 
 | Event | Trigger | Consumers (initial) |

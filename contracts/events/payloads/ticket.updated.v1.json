@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.appeals-platform.local/events/ticket.updated.v1.json",
+  "title": "ticket.updated.v1 payload",
+  "description": "Payload of the ticket.updated.v1 event, emitted by ticket-service when appeal card details change. To avoid leaking personal data, the payload lists which fields changed rather than their values; consumers re-read the card if they need the new values (docs/06, ADR-006). Marked PII because the set of changed fields may reference personal-data fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ticketId", "changedFields"],
+  "properties": {
+    "ticketId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal ticket identifier (UUIDv7)."
+    },
+    "changedFields": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"},
+      "description": "Names of the ticket-card fields that changed in this update."
+    }
+  }
+}

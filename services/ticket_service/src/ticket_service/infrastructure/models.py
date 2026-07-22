@@ -14,16 +14,19 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     Uuid,
+    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -75,12 +78,31 @@ class Ticket(Base):
         retention_until: Earliest purge-eligible date, set at closure (docs/01 retention).
         legal_hold: Whether the ticket is under legal hold and exempt from purge.
         version: Optimistic-locking version, managed by SQLAlchemy.
+        contract_number: Related credit-contract number, if any (searchable).
+        idempotency_key: Optional client-supplied key that makes registration retry-safe.
     """
 
     __tablename__ = "ticket"
+    # Search indexes backing the TASK_01B filters (status/stage/product/classifier/channel/
+    # assignee/team/dates/contract). Registration number carries its own unique index.
+    __table_args__ = (
+        Index("ix_ticket_current_status_code", "current_status_code"),
+        Index("ix_ticket_current_stage_code", "current_stage_code"),
+        Index("ix_ticket_product_code", "product_code"),
+        Index("ix_ticket_classifier_code", "classifier_code"),
+        Index("ix_ticket_source_channel_code", "source_channel_code"),
+        Index("ix_ticket_current_assignee_id", "current_assignee_id"),
+        Index("ix_ticket_current_team_id", "current_team_id"),
+        Index("ix_ticket_received_at", "received_at"),
+        Index("ix_ticket_registered_at", "registered_at"),
+        Index("ix_ticket_contract_number", "contract_number"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid7)
     registration_number: Mapped[str] = mapped_column(String(_CODE_LEN), unique=True, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(_CODE_LEN), unique=True, nullable=True
+    )
 
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -88,6 +110,7 @@ class Ticket(Base):
     source_channel_code: Mapped[str] = mapped_column(String(_CODE_LEN))
     subject: Mapped[str] = mapped_column(String(_SHORT_TEXT_LEN))
     description: Mapped[str] = mapped_column(Text())
+    contract_number: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
 
     product_code: Mapped[str] = mapped_column(String(_CODE_LEN))
     classifier_code: Mapped[str] = mapped_column(String(_CODE_LEN))
@@ -160,11 +183,15 @@ class TicketApplicant(Base):
     applicant_type: Mapped[ApplicantType] = mapped_column(
         Enum(ApplicantType, native_enum=False, length=_CODE_LEN)
     )
-    full_name: Mapped[str | None] = mapped_column(String(_SHORT_TEXT_LEN), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(
+        String(_SHORT_TEXT_LEN), nullable=True, index=True
+    )
     identifier_type: Mapped[IdentifierType | None] = mapped_column(
         Enum(IdentifierType, native_enum=False, length=_CODE_LEN), nullable=True
     )
-    identifier_value: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
+    identifier_value: Mapped[str | None] = mapped_column(
+        String(_CODE_LEN), nullable=True, index=True
+    )
     email: Mapped[str | None] = mapped_column(String(_SHORT_TEXT_LEN), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
     gender_code: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
@@ -227,3 +254,70 @@ class RegistrationSequence(Base):
 
     year: Mapped[int] = mapped_column(Integer(), primary_key=True, autoincrement=False)
     last_value: Mapped[int] = mapped_column(Integer(), default=0)
+
+
+class TicketComment(Base):
+    """A free-text comment attached to a ticket by an employee.
+
+    Comments are part of the appeal record owned by the ticket service. They carry no lifecycle
+    events in MVP.
+
+    Attributes:
+        id: Internal UUIDv7 primary key.
+        ticket_id: Owning ticket.
+        author_id: Identifier of the employee who wrote the comment.
+        body: The comment text.
+        created_at: Server-assigned creation timestamp.
+    """
+
+    __tablename__ = "ticket_comment"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid7)
+    ticket_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ticket.id", ondelete="CASCADE"), index=True
+    )
+    author_id: Mapped[uuid.UUID] = mapped_column(Uuid())
+    body: Mapped[str] = mapped_column(Text())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OutboxEvent(Base):
+    """A domain event staged for publication via the transactional outbox.
+
+    Rows are inserted in the same database transaction as the state change that produced them, so an
+    event is never lost or published for a rolled-back change (ADR-0004). A relay reads unpublished
+    rows (``published_at IS NULL``), publishes them to the broker, and stamps ``published_at``.
+    Consumers deduplicate on ``event_id``.
+
+    Attributes:
+        id: Internal UUIDv7 primary key (row identity, distinct from the event identity).
+        event_id: Unique event identifier carried in the envelope; consumers idempotency key.
+        event_type: Canonical ``<namespace>.<name>.v<version>`` type.
+        event_version: Payload schema version matching the type suffix.
+        aggregate_type: The aggregate kind that emitted the event (for example, ``ticket``).
+        aggregate_id: Identifier of the emitting aggregate.
+        occurred_at: UTC timestamp when the event occurred.
+        producer: Name of the producing service.
+        correlation_id: Correlation identifier tying related events and requests.
+        causation_id: Identifier of the causing event/command, or null.
+        payload: Event-specific body (owned/versioned by this service).
+        created_at: When the row was staged.
+        published_at: When the relay published the event, or null while pending.
+    """
+
+    __tablename__ = "outbox_event"
+    __table_args__ = (Index("ix_outbox_event_published_at", "published_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid7)
+    event_id: Mapped[uuid.UUID] = mapped_column(Uuid(), unique=True)
+    event_type: Mapped[str] = mapped_column(String(_SHORT_TEXT_LEN))
+    event_version: Mapped[int] = mapped_column(Integer())
+    aggregate_type: Mapped[str] = mapped_column(String(_CODE_LEN))
+    aggregate_id: Mapped[uuid.UUID] = mapped_column(Uuid())
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    producer: Mapped[str] = mapped_column(String(_CODE_LEN))
+    correlation_id: Mapped[str] = mapped_column(String(_CODE_LEN))
+    causation_id: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

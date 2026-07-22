@@ -38,6 +38,9 @@ dev = [
     "aiosqlite>=0.20",
     "jsonschema>=4.20",
     "types-jsonschema>=4.20",
+    "openapi-spec-validator>=0.7",
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0",
 ]
 
 # --- Ruff: linting, import sorting, and docstring enforcement (ADR-015) ---

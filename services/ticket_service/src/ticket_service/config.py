@@ -20,6 +20,12 @@ class Settings(BaseSettings):
         registration_number_prefix: Prefix for generated business registration numbers. Vendor
             neutral by default (ADR-016); the value is business-facing and may be changed per
             deployment without touching code.
+        outbox_relay_enabled: Whether to run the background outbox relay that publishes staged
+            events to RabbitMQ. Disabled by default so local runs and tests need no broker; the
+            compose stack enables it.
+        rabbitmq_url: AMQP connection URL used by the outbox relay when enabled.
+        rabbitmq_exchange: Topic exchange the relay publishes events to.
+        outbox_relay_interval_seconds: Delay between outbox relay passes.
     """
 
     model_config = SettingsConfigDict(env_prefix="TICKET_", env_file=".env", extra="ignore")
@@ -27,6 +33,10 @@ class Settings(BaseSettings):
     environment: str = "local"
     database_url: str = "sqlite+aiosqlite:///./ticket_service.db"
     registration_number_prefix: str = "AP"
+    outbox_relay_enabled: bool = False
+    rabbitmq_url: str = "amqp://guest:guest@localhost/"
+    rabbitmq_exchange: str = "appeals.events"
+    outbox_relay_interval_seconds: float = 2.0
 
 
 @lru_cache

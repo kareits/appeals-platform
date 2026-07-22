@@ -2,41 +2,75 @@
 
 Regulatory registry and appeal card for the MFO Appeals Platform. It owns the ticket model, the
 parties attached to an appeal (consumer and representative), the business-configurable reference
-dictionaries, and the business **registration number**.
+dictionaries, the business **registration number**, comments, and the appeal lifecycle use cases
+(manual registration, update, classification, comments, search).
 
-**Scope of TASK_01A (this increment):** data model, migrations, and registration-number
-allocation. Use cases (create/update/classify/comment), search, events, and business HTTP
-endpoints arrive in TASK_01B+; only health endpoints are exposed here.
+**Scope through TASK_01B (this increment):** the data model and registration number (TASK_01A) plus
+the use cases, search, and `ticket.*` events via the transactional outbox (TASK_01B). Decision,
+close, retention, SLA due-dates, and audit arrive in TASK_01C; authentication is provided later by
+IAM/BFF (TASK_01D/01E).
 
-## What it provides today
+## What it provides
 
-- The `domain` / `application` / `infrastructure` / `api` layering (copied from the service
-  template).
-- SQLAlchemy models: `ticket`, `ticket_applicant`, `dictionary_entry`, `registration_sequence`.
-- A `RegistrationNumber` value object (`AP-YYYY-NNNNNN`) and a counter-backed
-  `RegistrationNumberAllocator` that issues unique, per-year numbers.
+- The `domain` / `application` / `infrastructure` / `api` layering.
+- SQLAlchemy models: `ticket`, `ticket_applicant`, `dictionary_entry`, `registration_sequence`,
+  `ticket_comment`, `outbox_event`.
+- Use cases: `create_manual_ticket`, `update_ticket_details`, `classify_ticket`, `add_comment`,
+  `list_comments`, `search_tickets` (business logic lives in the application layer, not routes).
+- A `RegistrationNumber` value object (`AP-YYYY-NNNNNN`) and a counter-backed allocator issuing
+  unique, per-year numbers.
 - Pure lifecycle invariants (required registration fields; closure prerequisites; five-year
-  retention) ready for the TASK_01C use cases.
-- Alembic migrations: schema (`0001`) and draft reference dictionaries (`0002`, Q-A1).
-- Health endpoints: `GET /health/live` and `GET /health/ready` (database connectivity).
+  retention) — the closure/retention ones are wired up in TASK_01C.
+- A transactional outbox emitting `ticket.created.v1`, `ticket.classified.v1`, `ticket.updated.v1`,
+  with a background relay that publishes to RabbitMQ (opt-in, see configuration).
+- REST API under `/api/v1` and health endpoints (`/health/live`, `/health/ready`).
+
+## API
+
+Base path `/api/v1`; JSON camelCase; RFC 7807 errors; `X-Correlation-ID`; optimistic locking via
+`expectedVersion`; `Idempotency-Key` on create. Contract:
+[`contracts/openapi/ticket-service.v1.yaml`](../../contracts/openapi/ticket-service.v1.yaml).
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/tickets` | Register an appeal (idempotent with `Idempotency-Key`). |
+| GET | `/tickets` | Search by number/IIN-BIN/name/contract/status/stage/product/classifier/channel/assignee/team/dates; paginated. |
+| GET | `/tickets/{id}` | Get the appeal card. |
+| PATCH | `/tickets/{id}` | Update card details (not status/stage/assignment). |
+| POST | `/tickets/{id}/classify` | Set product/classifier/priority. |
+| POST/GET | `/tickets/{id}/comments` | Add/list comments. |
+
+Status, stage, and assignment are Flowable projections and are **not** editable through this API
+(they change only via the projection mechanism; a placeholder in EP-1).
+
+## Events (transactional outbox)
+
+Emitted via `outbox_event` (staged in the same transaction as the change) and relayed to RabbitMQ:
+
+| Event | Trigger | PII |
+|---|---|---|
+| `ticket.created.v1` | An appeal is registered | yes (identifier masked) |
+| `ticket.classified.v1` | Classification set/changed | no |
+| `ticket.updated.v1` | Card details change (carries changed-field names only) | yes |
+
+Payload schemas: [`contracts/events/payloads/`](../../contracts/events/payloads/). Full national
+identifiers never appear in events or logs — only a masked form (docs/06, Q-D3).
 
 ## Data ownership
 
-Per the platform data-ownership rules (root `CLAUDE.md`): the ticket card, applicants,
-classification codes, decision, closure, and retention. It does **not** own mail delivery, files,
-Flowable history, or corporate credentials. Status and stage are Flowable projections in later
-phases; at registration they hold their initial values.
+The ticket card, applicants, classification codes, comments, decision, closure, and retention. It
+does **not** own mail delivery, files, Flowable history, or corporate credentials.
 
 ## Local development
 
 ```bash
-uv run uvicorn ticket_service.main:app --reload   # run the service (SQLite)
-uv run pytest services/ticket_service             # run its tests
-cd services/ticket_service && uv run alembic upgrade head   # apply migrations (SQLite)
+python -m uv run uvicorn ticket_service.main:app --reload      # run the service (SQLite)
+python -m uv run pytest services/ticket_service                # run its tests
+cd services/ticket_service && python -m uv run alembic upgrade head   # apply migrations (SQLite)
 ```
 
-For local (non-Docker) runs and unit tests the service uses an embedded SQLite backend
-(`TICKET_DATABASE_URL=sqlite+aiosqlite:///./ticket_service.db`).
+For local (non-Docker) runs and unit tests the service uses an embedded SQLite backend. The outbox
+relay is disabled by default, so no broker is needed locally.
 
 ## Configuration
 
@@ -47,6 +81,10 @@ Environment variables (prefix `TICKET_`):
 | `TICKET_ENVIRONMENT` | `local` | Deployment environment name. |
 | `TICKET_DATABASE_URL` | `sqlite+aiosqlite:///./ticket_service.db` | SQLAlchemy async database URL. |
 | `TICKET_REGISTRATION_NUMBER_PREFIX` | `AP` | Prefix embedded in registration numbers. |
+| `TICKET_OUTBOX_RELAY_ENABLED` | `false` | Run the background relay that publishes staged events to RabbitMQ. |
+| `TICKET_RABBITMQ_URL` | `amqp://guest:guest@localhost/` | AMQP URL used by the relay when enabled. |
+| `TICKET_RABBITMQ_EXCHANGE` | `appeals.events` | Topic exchange the relay publishes to. |
+| `TICKET_OUTBOX_RELAY_INTERVAL_SECONDS` | `2.0` | Delay between relay passes. |
 
 ## Registration number
 
@@ -58,9 +96,10 @@ monotonic sequence (for example `AP-2026-000001`). Uniqueness is guaranteed by l
 
 ## Migrations
 
-- **migration:** `0001_create_ticket_tables` creates the four tables.
-- **backfill:** `0002_seed_dictionaries` seeds draft channel/product/classifier/priority/status/
-  stage/decision/closure-reason/gender dictionaries (Q-A1; codes are mapped later, not discarded).
+- **migration:** `0001` creates the core tables; `0003` adds `ticket_comment`, `outbox_event`, the
+  `contract_number`/`idempotency_key` ticket columns, and the search indexes.
+- **backfill:** `0002` seeds draft reference dictionaries (Q-A1; codes are mapped later, not
+  discarded).
 - **rollback:** `alembic downgrade base` drops the schema; `downgrade 0001` removes only the seed
   rows. No regulatory appeal data is deleted (root `CLAUDE.md`).
 - **validation:** `test_migration` applies/seeds/reverts against SQLite; `test_models` covers the
@@ -68,7 +107,8 @@ monotonic sequence (for example `AP-2026-000001`). Uniqueness is guaranteed by l
 
 ## Known limitations
 
-- SQLite is used for local (non-Docker) runs and unit tests; the compose stack uses PostgreSQL.
+- SQLite for local (non-Docker) runs and unit tests; the compose stack uses PostgreSQL.
 - Reference dictionaries hold draft codes pending the approved business taxonomy (Q-A1).
-- No business API, search, or events yet (TASK_01B+); the national identifier is stored but not
-  yet masked in outputs (Q-D3).
+- Case-insensitive name search relies on the PostgreSQL `ILIKE` collation; SQLite folds ASCII only.
+- No authentication yet (TASK_01D/01E); actor identifiers are supplied by the caller.
+- Not yet wired into `docker-compose`.

@@ -64,7 +64,14 @@ def test_migrations_upgrade_create_schema_and_seed(tmp_path: Path) -> None:
 
     command.upgrade(config, "head")
 
-    for table in ("ticket", "ticket_applicant", "dictionary_entry", "registration_sequence"):
+    for table in (
+        "ticket",
+        "ticket_applicant",
+        "dictionary_entry",
+        "registration_sequence",
+        "ticket_comment",
+        "outbox_event",
+    ):
         assert _table_exists(db_path, table)
     # Statuses are seeded verbatim from docs/01 (seven values); the full seed set is larger.
     assert _count_rows(db_path, "dictionary_entry") > 7
@@ -78,7 +85,14 @@ def test_migrations_downgrade_removes_schema(tmp_path: Path) -> None:
     command.upgrade(config, "head")
     command.downgrade(config, "base")
 
-    for table in ("ticket", "ticket_applicant", "dictionary_entry", "registration_sequence"):
+    for table in (
+        "ticket",
+        "ticket_applicant",
+        "dictionary_entry",
+        "registration_sequence",
+        "ticket_comment",
+        "outbox_event",
+    ):
         assert not _table_exists(db_path, table)
 
 

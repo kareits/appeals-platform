@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from mfo_testing import create_asgi_client
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from ticket_service.application.commands import ApplicantInput, CreateTicketCommand
 from ticket_service.config import Settings
+from ticket_service.domain.enums import ApplicantType, DataSource, IdentifierType
 from ticket_service.infrastructure.models import Base
 from ticket_service.main import create_app
 
@@ -56,3 +61,72 @@ async def session_factory(tmp_path: Path) -> AsyncIterator[async_sessionmaker[As
         yield factory
     finally:
         await engine.dispose()
+
+
+@pytest.fixture
+def make_applicant() -> Callable[..., ApplicantInput]:
+    """Return a builder for consumer applicant inputs.
+
+    Returns:
+        A callable that builds an :class:`ApplicantInput`, accepting field overrides.
+    """
+
+    def _build(**overrides: Any) -> ApplicantInput:
+        """Build an applicant input with defaults and overrides.
+
+        Args:
+            **overrides: Fields to override.
+
+        Returns:
+            The applicant input.
+        """
+        defaults: dict[str, Any] = {
+            "applicant_type": ApplicantType.CONSUMER,
+            "data_source": DataSource.MANUAL,
+            "full_name": "Иванов Иван",
+            "identifier_type": IdentifierType.IIN,
+            "identifier_value": "900101300123",
+            "region_code": "ALA",
+        }
+        defaults.update(overrides)
+        return ApplicantInput(**defaults)
+
+    return _build
+
+
+@pytest.fixture
+def make_create_command(
+    make_applicant: Callable[..., ApplicantInput],
+) -> Callable[..., CreateTicketCommand]:
+    """Return a builder for manual-registration commands.
+
+    Args:
+        make_applicant: The applicant-input builder fixture.
+
+    Returns:
+        A callable that builds a :class:`CreateTicketCommand`, accepting field overrides.
+    """
+
+    def _build(**overrides: Any) -> CreateTicketCommand:
+        """Build a registration command with defaults and overrides.
+
+        Args:
+            **overrides: Fields to override.
+
+        Returns:
+            The registration command.
+        """
+        defaults: dict[str, Any] = {
+            "received_at": datetime(2026, 7, 22, 9, 0, tzinfo=UTC),
+            "source_channel_code": "EMAIL",
+            "subject": "Restructuring request",
+            "description": "Full appeal text",
+            "product_code": "MICROLOAN",
+            "classifier_code": "RESTRUCTURING",
+            "priority_code": "NORMAL",
+            "applicant": make_applicant(),
+        }
+        defaults.update(overrides)
+        return CreateTicketCommand(**defaults)
+
+    return _build

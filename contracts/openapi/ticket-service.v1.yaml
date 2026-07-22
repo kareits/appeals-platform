@@ -1,0 +1,415 @@
+openapi: 3.1.0
+info:
+  title: Ticket Service API
+  version: "1.0.0"
+  description: >-
+    Regulatory registry and appeal card API of the MFO Appeals Platform. Covers manual
+    registration, card updates, classification, comments, and search (TASK_01B). Conventions
+    (docs/05): base path /api/v1, JSON with camelCase fields, ISO-8601 UTC timestamps, RFC 7807
+    Problem Details for errors, X-Correlation-ID propagation, cursorless page/pageSize pagination,
+    optimistic locking via an expectedVersion field, and Idempotency-Key for create commands.
+    Status, stage, and assignment are Flowable projections and are not editable through this API.
+servers:
+  - url: /api/v1
+    description: Versioned base path (mounted by the service).
+tags:
+  - name: tickets
+    description: Appeal registration, card, classification, comments, and search.
+paths:
+  /tickets:
+    post:
+      tags: [tickets]
+      operationId: createManualTicket
+      summary: Register an appeal manually.
+      description: >-
+        Registers any written appeal, allocates a unique registration number, and stores the
+        applicant (and optional representative). Emits ticket.created.v1 via the transactional
+        outbox. Supply Idempotency-Key to make retries safe: a repeated key returns the originally
+        created ticket instead of creating a duplicate.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '201':
+          description: The appeal was registered.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '200':
+          description: An appeal with the same Idempotency-Key already exists; the original is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+    get:
+      tags: [tickets]
+      operationId: searchTickets
+      summary: Search appeals.
+      description: >-
+        Filters appeals by registration number, national identifier (IIN/BIN), full name, contract
+        number, status, stage, product, classifier, channel, assignee, team, and received/registered
+        date ranges. Results are paginated.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - {name: registrationNumber, in: query, schema: {type: string}, description: Exact registration number.}
+        - {name: identifierValue, in: query, schema: {type: string}, description: Exact national identifier (IIN/BIN) of an attached party.}
+        - {name: fullName, in: query, schema: {type: string}, description: Case-insensitive partial match on a party's full name.}
+        - {name: contractNumber, in: query, schema: {type: string}, description: Exact related contract number.}
+        - {name: statusCode, in: query, schema: {type: string}, description: Current status code.}
+        - {name: stageCode, in: query, schema: {type: string}, description: Current stage code.}
+        - {name: productCode, in: query, schema: {type: string}, description: Credit-product code.}
+        - {name: classifierCode, in: query, schema: {type: string}, description: Question-classifier code.}
+        - {name: channelCode, in: query, schema: {type: string}, description: Intake channel code.}
+        - {name: assigneeId, in: query, schema: {type: string, format: uuid}, description: Current assignee identifier.}
+        - {name: teamId, in: query, schema: {type: string, format: uuid}, description: Current team identifier.}
+        - {name: receivedFrom, in: query, schema: {type: string, format: date-time}, description: Inclusive lower bound on receivedAt.}
+        - {name: receivedTo, in: query, schema: {type: string, format: date-time}, description: Inclusive upper bound on receivedAt.}
+        - {name: registeredFrom, in: query, schema: {type: string, format: date-time}, description: Inclusive lower bound on registeredAt.}
+        - {name: registeredTo, in: query, schema: {type: string, format: date-time}, description: Inclusive upper bound on registeredAt.}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}, description: 1-based page number.}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}, description: Page size.}
+      responses:
+        '200':
+          description: A page of matching appeals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTickets'
+        '400':
+          $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    get:
+      tags: [tickets]
+      operationId: getTicket
+      summary: Get an appeal by identifier.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The appeal card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+    patch:
+      tags: [tickets]
+      operationId: updateTicketDetails
+      summary: Update editable appeal-card details.
+      description: >-
+        Updates card text fields (subject, description, source channel, contract number). Status,
+        stage, and assignment are not editable here (they change only through the Flowable
+        projection). Requires expectedVersion for optimistic locking; a mismatch yields 409. Emits
+        ticket.updated.v1.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketRequest'
+      responses:
+        '200':
+          description: The updated appeal card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}/classify:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    post:
+      tags: [tickets]
+      operationId: classifyTicket
+      summary: Set the appeal classification.
+      description: >-
+        Sets product, question classifier, and priority. Requires expectedVersion for optimistic
+        locking. Emits ticket.classified.v1.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassifyRequest'
+      responses:
+        '200':
+          description: The reclassified appeal card.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    post:
+      tags: [tickets]
+      operationId: addComment
+      summary: Add a comment to an appeal.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '201':
+          description: The created comment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+    get:
+      tags: [tickets]
+      operationId: listComments
+      summary: List an appeal's comments (newest first).
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The comments attached to the appeal.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommentResponse'
+        '404':
+          $ref: '#/components/responses/Problem'
+components:
+  parameters:
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+      description: Internal ticket identifier (UUIDv7).
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: {type: string}
+      description: Correlation identifier propagated across services; generated when absent.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: {type: string, maxLength: 200}
+      description: Client-supplied key making a create retry-safe.
+  headers:
+    CorrelationId:
+      schema: {type: string}
+      description: Correlation identifier for this request.
+  responses:
+    Problem:
+      description: An RFC 7807 Problem Details error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    ApplicantInput:
+      type: object
+      additionalProperties: false
+      description: A party attached to an appeal. All demographic fields are optional (docs/01).
+      required: [applicantType, dataSource]
+      properties:
+        applicantType: {type: string, enum: [CONSUMER, REPRESENTATIVE], description: Party role.}
+        fullName: {type: [string, "null"], description: Full name.}
+        identifierType: {type: [string, "null"], enum: [IIN, BIN, null], description: Identifier kind.}
+        identifierValue: {type: [string, "null"], description: National identifier (sensitive; masked in outputs).}
+        email: {type: [string, "null"], description: Contact email.}
+        phone: {type: [string, "null"], description: Contact phone.}
+        genderCode: {type: [string, "null"], description: Gender code.}
+        birthDate: {type: [string, "null"], format: date, description: Date of birth.}
+        age: {type: [integer, "null"], description: Age in years.}
+        regionCode: {type: [string, "null"], description: Region code.}
+        dataSource: {type: string, enum: [APPEAL, CORE_SYSTEM, MANUAL], description: Provenance of the data.}
+        representativeBasis: {type: [string, "null"], description: Legal basis for a representative.}
+    CreateTicketRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [receivedAt, sourceChannelCode, subject, description, productCode, classifierCode,
+         priorityCode, applicant]
+      properties:
+        receivedAt: {type: string, format: date-time, description: When the appeal was received.}
+        sourceChannelCode: {type: string, description: Intake channel code.}
+        subject: {type: string, minLength: 1, description: Short subject line.}
+        description: {type: string, minLength: 1, description: Full appeal text.}
+        productCode: {type: string, description: Credit-product code.}
+        classifierCode: {type: string, description: Question-classifier code.}
+        priorityCode: {type: string, description: Priority code.}
+        contractNumber: {type: [string, "null"], description: Related credit-contract number.}
+        applicant: {$ref: '#/components/schemas/ApplicantInput'}
+        representative:
+          oneOf:
+            - {$ref: '#/components/schemas/ApplicantInput'}
+            - {type: 'null'}
+          description: Optional representative party.
+    UpdateTicketRequest:
+      type: object
+      additionalProperties: false
+      description: Partial update; only supplied fields change. Status/stage/assignment are excluded.
+      required: [expectedVersion]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
+        subject: {type: string, minLength: 1, description: New subject line.}
+        description: {type: string, minLength: 1, description: New appeal text.}
+        sourceChannelCode: {type: string, description: New intake channel code.}
+        contractNumber: {type: [string, "null"], description: New related contract number (null clears it).}
+    ClassifyRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, productCode, classifierCode, priorityCode]
+      properties:
+        expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
+        productCode: {type: string, description: Credit-product code.}
+        classifierCode: {type: string, description: Question-classifier code.}
+        priorityCode: {type: string, description: Priority code.}
+    CommentRequest:
+      type: object
+      additionalProperties: false
+      required: [authorId, body]
+      properties:
+        authorId: {type: string, format: uuid, description: Identifier of the comment author.}
+        body: {type: string, minLength: 1, description: Comment text.}
+    ApplicantResponse:
+      type: object
+      description: A party as returned by the API; the national identifier is masked.
+      required: [id, applicantType, dataSource]
+      properties:
+        id: {type: string, format: uuid}
+        applicantType: {type: string, enum: [CONSUMER, REPRESENTATIVE]}
+        fullName: {type: [string, "null"]}
+        identifierType: {type: [string, "null"], enum: [IIN, BIN, null]}
+        identifierMasked: {type: [string, "null"], description: Masked national identifier.}
+        email: {type: [string, "null"]}
+        phone: {type: [string, "null"]}
+        genderCode: {type: [string, "null"]}
+        birthDate: {type: [string, "null"], format: date}
+        age: {type: [integer, "null"]}
+        regionCode: {type: [string, "null"]}
+        dataSource: {type: string, enum: [APPEAL, CORE_SYSTEM, MANUAL]}
+        representativeBasis: {type: [string, "null"]}
+    TicketResponse:
+      type: object
+      description: The appeal card.
+      required:
+        [id, registrationNumber, receivedAt, registeredAt, sourceChannelCode, subject, description,
+         productCode, classifierCode, priorityCode, currentStatusCode, currentStageCode, legalHold,
+         version, applicants]
+      properties:
+        id: {type: string, format: uuid}
+        registrationNumber: {type: string}
+        receivedAt: {type: string, format: date-time}
+        registeredAt: {type: string, format: date-time}
+        sourceChannelCode: {type: string}
+        subject: {type: string}
+        description: {type: string}
+        productCode: {type: string}
+        classifierCode: {type: string}
+        priorityCode: {type: string}
+        currentStatusCode: {type: string}
+        currentStageCode: {type: string}
+        currentTeamId: {type: [string, "null"], format: uuid}
+        currentAssigneeId: {type: [string, "null"], format: uuid}
+        contractNumber: {type: [string, "null"]}
+        legalDueAt: {type: [string, "null"], format: date-time}
+        internalDueAt: {type: [string, "null"], format: date-time}
+        legalHold: {type: boolean}
+        version: {type: integer}
+        applicants:
+          type: array
+          items: {$ref: '#/components/schemas/ApplicantResponse'}
+    TicketSummary:
+      type: object
+      description: A compact appeal representation for search results.
+      required:
+        [id, registrationNumber, subject, currentStatusCode, currentStageCode, productCode,
+         classifierCode, priorityCode, receivedAt, registeredAt]
+      properties:
+        id: {type: string, format: uuid}
+        registrationNumber: {type: string}
+        subject: {type: string}
+        currentStatusCode: {type: string}
+        currentStageCode: {type: string}
+        productCode: {type: string}
+        classifierCode: {type: string}
+        priorityCode: {type: string}
+        contractNumber: {type: [string, "null"]}
+        currentAssigneeId: {type: [string, "null"], format: uuid}
+        currentTeamId: {type: [string, "null"], format: uuid}
+        receivedAt: {type: string, format: date-time}
+        registeredAt: {type: string, format: date-time}
+    PageMeta:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page: {type: integer, description: 1-based page number.}
+        pageSize: {type: integer, description: Page size.}
+        total: {type: integer, description: Total matching appeals.}
+    PaginatedTickets:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/TicketSummary'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+    CommentResponse:
+      type: object
+      required: [id, ticketId, authorId, body, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        ticketId: {type: string, format: uuid}
+        authorId: {type: string, format: uuid}
+        body: {type: string}
+        createdAt: {type: string, format: date-time}
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details.
+      required: [title, status]
+      properties:
+        type: {type: string, default: 'about:blank'}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: [string, "null"]}
+        instance: {type: [string, "null"]}

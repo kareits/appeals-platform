@@ -1,0 +1,394 @@
+"""Pydantic request/response schemas for the ticket API.
+
+All models serialize with camelCase field names (docs/05). Response mappers apply identifier
+masking so full national identifiers never leave the service in API payloads (docs/06, Q-D3).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+
+from ticket_service.domain.enums import ApplicantType, DataSource, IdentifierType
+from ticket_service.infrastructure.masking import mask_identifier
+from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
+
+
+class CamelModel(BaseModel):
+    """Base model serializing fields as camelCase while accepting snake_case on construction."""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class ApplicantModel(CamelModel):
+    """Request model for a party attached to an appeal.
+
+    Attributes:
+        applicant_type: Whether this party is the consumer or a representative.
+        data_source: Provenance of the party's data.
+        full_name: Full name, if known.
+        identifier_type: Kind of national identifier, if known.
+        identifier_value: National identifier value, if known (masked in responses).
+        email: Contact email, if known.
+        phone: Contact phone, if known.
+        gender_code: Gender code, if known.
+        birth_date: Date of birth, if known.
+        age: Age in years, if known.
+        region_code: Region code, if known.
+        representative_basis: Legal basis on which a representative acts, if applicable.
+    """
+
+    applicant_type: ApplicantType
+    data_source: DataSource
+    full_name: str | None = None
+    identifier_type: IdentifierType | None = None
+    identifier_value: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    gender_code: str | None = None
+    birth_date: date | None = None
+    age: int | None = None
+    region_code: str | None = None
+    representative_basis: str | None = None
+
+
+class CreateTicketRequest(CamelModel):
+    """Request body to register an appeal.
+
+    Attributes:
+        received_at: When the appeal was received.
+        source_channel_code: Intake channel code.
+        subject: Short subject line.
+        description: Full appeal text.
+        product_code: Credit-product code.
+        classifier_code: Question-classifier code.
+        priority_code: Priority code.
+        applicant: The consumer party.
+        contract_number: Related credit-contract number, if any.
+        representative: An optional representative party.
+    """
+
+    received_at: datetime
+    source_channel_code: str
+    subject: str
+    description: str
+    product_code: str
+    classifier_code: str
+    priority_code: str
+    applicant: ApplicantModel
+    contract_number: str | None = None
+    representative: ApplicantModel | None = None
+
+
+class UpdateTicketRequest(CamelModel):
+    """Request body to update editable appeal-card details.
+
+    Only supplied fields are applied; ``expected_version`` enforces optimistic locking.
+
+    Attributes:
+        expected_version: Version the client last observed.
+        subject: New subject line, if supplied.
+        description: New appeal text, if supplied.
+        source_channel_code: New intake channel code, if supplied.
+        contract_number: New contract number, if supplied (``None`` clears it).
+    """
+
+    expected_version: int
+    subject: str | None = None
+    description: str | None = None
+    source_channel_code: str | None = None
+    contract_number: str | None = None
+
+
+class ClassifyRequest(CamelModel):
+    """Request body to classify an appeal.
+
+    Attributes:
+        expected_version: Version the client last observed.
+        product_code: Credit-product code.
+        classifier_code: Question-classifier code.
+        priority_code: Priority code.
+    """
+
+    expected_version: int
+    product_code: str
+    classifier_code: str
+    priority_code: str
+
+
+class CommentRequest(CamelModel):
+    """Request body to add a comment.
+
+    Attributes:
+        author_id: Identifier of the comment author.
+        body: Comment text.
+    """
+
+    author_id: uuid.UUID
+    body: str
+
+
+class ApplicantResponse(CamelModel):
+    """Response model for a party; the national identifier is masked.
+
+    Attributes:
+        id: Party identifier.
+        applicant_type: Party role.
+        full_name: Full name, if known.
+        identifier_type: Kind of national identifier, if known.
+        identifier_masked: Masked national identifier, if any.
+        email: Contact email, if known.
+        phone: Contact phone, if known.
+        gender_code: Gender code, if known.
+        birth_date: Date of birth, if known.
+        age: Age in years, if known.
+        region_code: Region code, if known.
+        data_source: Provenance of the data.
+        representative_basis: Legal basis for a representative, if applicable.
+    """
+
+    id: uuid.UUID
+    applicant_type: ApplicantType
+    full_name: str | None
+    identifier_type: IdentifierType | None
+    identifier_masked: str | None
+    email: str | None
+    phone: str | None
+    gender_code: str | None
+    birth_date: date | None
+    age: int | None
+    region_code: str | None
+    data_source: DataSource
+    representative_basis: str | None
+
+
+class TicketResponse(CamelModel):
+    """Response model for the full appeal card.
+
+    Attributes:
+        id: Ticket identifier.
+        registration_number: Business registration number.
+        received_at: When the appeal was received.
+        registered_at: When the appeal was registered.
+        source_channel_code: Intake channel code.
+        subject: Subject line.
+        description: Full appeal text.
+        product_code: Credit-product code.
+        classifier_code: Question-classifier code.
+        priority_code: Priority code.
+        current_status_code: Current status (Flowable projection).
+        current_stage_code: Current stage (Flowable projection).
+        current_team_id: Current team, if assigned.
+        current_assignee_id: Current assignee, if assigned.
+        contract_number: Related contract number, if any.
+        legal_due_at: Regulatory deadline, if computed.
+        internal_due_at: Internal SLA deadline, if computed.
+        legal_hold: Whether the ticket is under legal hold.
+        version: Optimistic-locking version.
+        applicants: The parties attached to the ticket.
+    """
+
+    id: uuid.UUID
+    registration_number: str
+    received_at: datetime
+    registered_at: datetime
+    source_channel_code: str
+    subject: str
+    description: str
+    product_code: str
+    classifier_code: str
+    priority_code: str
+    current_status_code: str
+    current_stage_code: str
+    current_team_id: uuid.UUID | None
+    current_assignee_id: uuid.UUID | None
+    contract_number: str | None
+    legal_due_at: datetime | None
+    internal_due_at: datetime | None
+    legal_hold: bool
+    version: int
+    applicants: list[ApplicantResponse]
+
+
+class TicketSummary(CamelModel):
+    """Compact appeal representation for search results.
+
+    Attributes:
+        id: Ticket identifier.
+        registration_number: Business registration number.
+        subject: Subject line.
+        current_status_code: Current status code.
+        current_stage_code: Current stage code.
+        product_code: Credit-product code.
+        classifier_code: Question-classifier code.
+        priority_code: Priority code.
+        contract_number: Related contract number, if any.
+        current_assignee_id: Current assignee, if assigned.
+        current_team_id: Current team, if assigned.
+        received_at: When the appeal was received.
+        registered_at: When the appeal was registered.
+    """
+
+    id: uuid.UUID
+    registration_number: str
+    subject: str
+    current_status_code: str
+    current_stage_code: str
+    product_code: str
+    classifier_code: str
+    priority_code: str
+    contract_number: str | None
+    current_assignee_id: uuid.UUID | None
+    current_team_id: uuid.UUID | None
+    received_at: datetime
+    registered_at: datetime
+
+
+class PageMeta(CamelModel):
+    """Pagination metadata.
+
+    Attributes:
+        page: 1-based page number.
+        page_size: Page size.
+        total: Total matching appeals.
+    """
+
+    page: int
+    page_size: int
+    total: int
+
+
+class PaginatedTickets(CamelModel):
+    """A page of appeal search results.
+
+    Attributes:
+        items: The appeals on this page.
+        page: Pagination metadata.
+    """
+
+    items: list[TicketSummary]
+    page: PageMeta
+
+
+class CommentResponse(CamelModel):
+    """Response model for a comment.
+
+    Attributes:
+        id: Comment identifier.
+        ticket_id: Owning ticket.
+        author_id: Comment author.
+        body: Comment text.
+        created_at: Creation timestamp.
+    """
+
+    id: uuid.UUID
+    ticket_id: uuid.UUID
+    author_id: uuid.UUID
+    body: str
+    created_at: datetime
+
+
+def applicant_to_response(applicant: TicketApplicant) -> ApplicantResponse:
+    """Map an applicant row to its masked response model.
+
+    Args:
+        applicant: The stored applicant.
+
+    Returns:
+        The response model with the identifier masked.
+    """
+    return ApplicantResponse(
+        id=applicant.id,
+        applicant_type=applicant.applicant_type,
+        full_name=applicant.full_name,
+        identifier_type=applicant.identifier_type,
+        identifier_masked=mask_identifier(applicant.identifier_value),
+        email=applicant.email,
+        phone=applicant.phone,
+        gender_code=applicant.gender_code,
+        birth_date=applicant.birth_date,
+        age=applicant.age,
+        region_code=applicant.region_code,
+        data_source=applicant.data_source,
+        representative_basis=applicant.representative_basis,
+    )
+
+
+def ticket_to_response(ticket: Ticket) -> TicketResponse:
+    """Map a ticket (with applicants loaded) to its response model.
+
+    Args:
+        ticket: The stored ticket.
+
+    Returns:
+        The full card response.
+    """
+    return TicketResponse(
+        id=ticket.id,
+        registration_number=ticket.registration_number,
+        received_at=ticket.received_at,
+        registered_at=ticket.registered_at,
+        source_channel_code=ticket.source_channel_code,
+        subject=ticket.subject,
+        description=ticket.description,
+        product_code=ticket.product_code,
+        classifier_code=ticket.classifier_code,
+        priority_code=ticket.priority_code,
+        current_status_code=ticket.current_status_code,
+        current_stage_code=ticket.current_stage_code,
+        current_team_id=ticket.current_team_id,
+        current_assignee_id=ticket.current_assignee_id,
+        contract_number=ticket.contract_number,
+        legal_due_at=ticket.legal_due_at,
+        internal_due_at=ticket.internal_due_at,
+        legal_hold=ticket.legal_hold,
+        version=ticket.version,
+        applicants=[applicant_to_response(a) for a in ticket.applicants],
+    )
+
+
+def ticket_to_summary(ticket: Ticket) -> TicketSummary:
+    """Map a ticket to its search-summary model.
+
+    Args:
+        ticket: The stored ticket.
+
+    Returns:
+        The compact summary.
+    """
+    return TicketSummary(
+        id=ticket.id,
+        registration_number=ticket.registration_number,
+        subject=ticket.subject,
+        current_status_code=ticket.current_status_code,
+        current_stage_code=ticket.current_stage_code,
+        product_code=ticket.product_code,
+        classifier_code=ticket.classifier_code,
+        priority_code=ticket.priority_code,
+        contract_number=ticket.contract_number,
+        current_assignee_id=ticket.current_assignee_id,
+        current_team_id=ticket.current_team_id,
+        received_at=ticket.received_at,
+        registered_at=ticket.registered_at,
+    )
+
+
+def comment_to_response(comment: TicketComment) -> CommentResponse:
+    """Map a comment row to its response model.
+
+    Args:
+        comment: The stored comment.
+
+    Returns:
+        The comment response.
+    """
+    return CommentResponse(
+        id=comment.id,
+        ticket_id=comment.ticket_id,
+        author_id=comment.author_id,
+        body=comment.body,
+        created_at=comment.created_at,
+    )

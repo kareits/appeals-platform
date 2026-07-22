@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.appeals-platform.local/events/ticket.classified.v1.json",
+  "title": "ticket.classified.v1 payload",
+  "description": "Payload of the ticket.classified.v1 event, emitted by ticket-service when an appeal's classification (product, question classifier, priority) is set or changed. Carries no personal data (docs/06).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ticketId", "productCode", "classifierCode", "priorityCode"],
+  "properties": {
+    "ticketId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal ticket identifier (UUIDv7)."
+    },
+    "productCode": {
+      "type": "string",
+      "description": "Credit-product code (dictionary 'product')."
+    },
+    "classifierCode": {
+      "type": "string",
+      "description": "Question-classifier code (dictionary 'classifier')."
+    },
+    "priorityCode": {
+      "type": "string",
+      "description": "Priority code (dictionary 'priority')."
+    }
+  }
+}

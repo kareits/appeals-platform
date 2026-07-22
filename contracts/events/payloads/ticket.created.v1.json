@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.appeals-platform.local/events/ticket.created.v1.json",
+  "title": "ticket.created.v1 payload",
+  "description": "Payload of the ticket.created.v1 event, emitted by ticket-service when an appeal is registered (manual entry in EP-1; from mail later). Personal data is minimized: the applicant's national identifier appears only in masked form (identifierMasked); the full identifier is never placed in events or logs (ADR-006, docs/06, Q-D3).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ticketId",
+    "registrationNumber",
+    "receivedAt",
+    "registeredAt",
+    "sourceChannelCode",
+    "productCode",
+    "classifierCode",
+    "priorityCode",
+    "currentStatusCode",
+    "currentStageCode",
+    "subject",
+    "applicant",
+    "hasRepresentative"
+  ],
+  "properties": {
+    "ticketId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal ticket identifier (UUIDv7)."
+    },
+    "registrationNumber": {
+      "type": "string",
+      "description": "Business registration number of the appeal (for example, AP-2026-000001)."
+    },
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when the appeal was received."
+    },
+    "registeredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when the appeal was registered."
+    },
+    "sourceChannelCode": {
+      "type": "string",
+      "description": "Intake channel code (dictionary 'channel')."
+    },
+    "productCode": {
+      "type": "string",
+      "description": "Credit-product code (dictionary 'product')."
+    },
+    "classifierCode": {
+      "type": "string",
+      "description": "Question-classifier code (dictionary 'classifier')."
+    },
+    "priorityCode": {
+      "type": "string",
+      "description": "Priority code (dictionary 'priority')."
+    },
+    "currentStatusCode": {
+      "type": "string",
+      "description": "Current status code at registration (dictionary 'status')."
+    },
+    "currentStageCode": {
+      "type": "string",
+      "description": "Current stage code at registration (dictionary 'stage')."
+    },
+    "subject": {
+      "type": "string",
+      "description": "Short subject line of the appeal."
+    },
+    "contractNumber": {
+      "type": ["string", "null"],
+      "description": "Related credit-contract number, if provided."
+    },
+    "applicant": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The consumer party in privacy-minimized form. No full national identifier is included.",
+      "required": ["applicantType"],
+      "properties": {
+        "applicantType": {
+          "type": "string",
+          "enum": ["CONSUMER", "REPRESENTATIVE"],
+          "description": "Role of the party (the consumer for a created ticket)."
+        },
+        "identifierType": {
+          "type": ["string", "null"],
+          "enum": ["IIN", "BIN", null],
+          "description": "Kind of national identifier, if known."
+        },
+        "identifierMasked": {
+          "type": ["string", "null"],
+          "description": "Masked national identifier (only the last digits are shown), or null."
+        },
+        "regionCode": {
+          "type": ["string", "null"],
+          "description": "Region code (dictionary 'region'), if known."
+        }
+      }
+    },
+    "hasRepresentative": {
+      "type": "boolean",
+      "description": "Whether a representative party is attached to the ticket."
+    }
+  }
+}
