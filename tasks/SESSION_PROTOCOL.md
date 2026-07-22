@@ -17,6 +17,8 @@ Read only what the phase needs:
   needed" documents for this phase, plus which services may and may not be changed;
 - the subtask entry in [`DETAILED_TASK_INDEX.md`](DETAILED_TASK_INDEX.md) — scope, data
   (migration/backfill/rollback/validation), DoD-specific items, and the independent check;
+- the phase section of [`docs/IMPLEMENTATION_PLAN.md`](../docs/IMPLEMENTATION_PLAN.md) —
+  Goal/API/Events/Data/Acceptance/Out-of-scope for the current EP, which refines the subtask;
 - [`docs/DECISION_LOG.md`](../docs/DECISION_LOG.md) and
   [`docs/DOCUMENT_PRECEDENCE.md`](../docs/DOCUMENT_PRECEDENCE.md) for the governing decisions.
 

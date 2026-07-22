@@ -10,6 +10,8 @@ overloaded and unrelated components are not changed (R-12).
 - `docs/DOCUMENT_PRECEDENCE.md`
 - `docs/DECISION_LOG.md`
 - the current task file from `tasks/DETAILED_TASK_INDEX.md` (the relevant subtask)
+- the phase section of `docs/IMPLEMENTATION_PLAN.md` (Goal/API/Events/Data/Acceptance/Out-of-scope
+  for the current EP; refines the subtask)
 
 **Notation:** "must not change" = services out of scope; contracts change before implementation
 (OpenAPI/JSON Schema + contract tests first).
