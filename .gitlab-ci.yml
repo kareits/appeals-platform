@@ -24,6 +24,13 @@ variables:
   # its default cache outside the checkout, matching the GitHub workflow.
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
+default:
+  # Route jobs to the docker-executor runner by default. The instance shell runner (tag "global2")
+  # cannot run image-based jobs — it ignores `image:` and runs on a host without npm/python/docker,
+  # so untagged jobs that land there fail. The group runner "slkz-1" is a docker executor.
+  # Integration jobs override this with the "dind" tag (see the .dind template).
+  tags: [slkz-1]
+
 # --- static analysis and unit tests -------------------------------------------------------------
 
 quality:
