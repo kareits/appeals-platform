@@ -19,7 +19,9 @@ stages:
 
 variables:
   UV_VERSION: "0.11.30" # Pin the same uv version as the GitHub workflow for reproducibility.
-  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  # Do NOT point UV_CACHE_DIR inside the project: `interrogate .` scans non-hidden project files,
+  # and an in-tree cache would be counted as undocumented code, failing the 100% gate. Let uv use
+  # its default cache outside the checkout, matching the GitHub workflow.
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 # --- static analysis and unit tests -------------------------------------------------------------
@@ -27,10 +29,6 @@ variables:
 quality:
   stage: static-and-unit
   image: python:3.12-bookworm
-  cache:
-    key:
-      files: [uv.lock]
-    paths: [.uv-cache/]
   before_script:
     - pip install "uv==${UV_VERSION}"
     - uv sync --all-packages --dev
@@ -46,8 +44,9 @@ frontend:
   stage: static-and-unit
   image: node:24
   cache:
-    key:
-      files: [apps/web-frontend/package-lock.json]
+    # A cache key must not contain '/', so use a slash-free ref-based key rather than the lockfile
+    # path. node_modules is safe to cache; npm ci reconciles it against the lockfile each run.
+    key: "frontend-$CI_COMMIT_REF_SLUG"
     paths: [apps/web-frontend/node_modules/]
   before_script:
     - cd apps/web-frontend
@@ -58,7 +57,7 @@ frontend:
     - npm run typecheck
     - npm test
     - npm run build
-    - npm audit --audit-level=high # Fail on high/critical advisories, matching the GitHub gate.
+    - npm run audit:ci # audit-ci with a documented allowlist; see apps/web-frontend/audit-ci.jsonc.
 
 # --- PostgreSQL migration and concurrency tests -------------------------------------------------
 

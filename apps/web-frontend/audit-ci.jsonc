@@ -1,0 +1,16 @@
+{
+  // Dependency-audit gate for the web frontend. Fails the build on high and critical advisories,
+  // replacing the bare `npm audit --audit-level=high` so specific, non-applicable advisories can be
+  // allowlisted with an audit trail instead of weakening the whole threshold.
+  "high": true,
+
+  // TODO(react-router-audit): Remove GHSA-qwww-vcr4-c8h2 once react-router publishes a version that
+  // leaves the vulnerable range without reintroducing other high advisories, then delete this entry.
+  //
+  // Why it is allowlisted: GHSA-qwww-vcr4-c8h2 is an RSC-mode (React Server Components) CSRF bypass.
+  // This app is a client-only SPA (Vite build served as static files; no server/RSC runtime), so the
+  // vulnerable code path is not reachable here. Every react-router-dom 7.x version currently carries
+  // some high advisory (7.0.0-7.11.0 => XSS/DoS set; 7.12.0-8.2.0 => this RSC CSRF), so there is no
+  // clean upgrade or downgrade target; 7.18.1 is the safest choice for a client SPA.
+  "allowlist": ["GHSA-qwww-vcr4-c8h2"],
+}
