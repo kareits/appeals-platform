@@ -78,7 +78,10 @@ jobs:
         run: npm run build
 
       - name: Dependency audit (fail on high/critical)
-        run: npm audit --audit-level=high
+        # audit-ci wraps `npm audit` with a documented allowlist so a single non-applicable advisory
+        # can be waived with an audit trail instead of lowering the whole threshold. See
+        # apps/web-frontend/audit-ci.jsonc.
+        run: npm run audit:ci
 
   iam-postgres-migrations:
     name: IAM PostgreSQL migrations
