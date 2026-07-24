@@ -1,0 +1,215 @@
+# GitLab CI/CD pipeline for the MFO Appeals Platform (corporate downstream mirror).
+#
+# GitHub Actions is the primary CI (.github/workflows/ci.yml) and GitHub is the single source of
+# truth. This pipeline INDEPENDENTLY re-runs the same gates inside the corporate GitLab so that
+# deployment from GitLab is gated on checks executed within the corporate perimeter, not on the
+# external GitHub run.
+#
+# Runner requirements (adjust images/tags to the corporate runner fleet):
+#   - static-and-unit and database stages: a Linux runner with the docker executor and support for
+#     service containers.
+#   - integration stage: a privileged Docker-in-Docker runner (tagged "dind"). Published compose
+#     ports are reached via the "docker" host alias.
+#   - corporate secrets belong in GitLab CI/CD Variables, never in this file.
+
+stages:
+  - static-and-unit
+  - database
+  - integration
+
+variables:
+  UV_VERSION: "0.11.30" # Pin the same uv version as the GitHub workflow for reproducibility.
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+# --- static analysis and unit tests -------------------------------------------------------------
+
+quality:
+  stage: static-and-unit
+  image: python:3.12-bookworm
+  cache:
+    key:
+      files: [uv.lock]
+    paths: [.uv-cache/]
+  before_script:
+    - pip install "uv==${UV_VERSION}"
+    - uv sync --all-packages --dev
+  script:
+    - uv run ruff check .
+    - uv run ruff format --check .
+    - uv run mypy
+    - uv run pytest
+    - uv run interrogate -c pyproject.toml .
+    - uv run python tools/check_english_markdown.py
+
+frontend:
+  stage: static-and-unit
+  image: node:24
+  cache:
+    key:
+      files: [apps/web-frontend/package-lock.json]
+    paths: [apps/web-frontend/node_modules/]
+  before_script:
+    - cd apps/web-frontend
+    - npm ci
+  script:
+    - npm run lint
+    - npm run format:check
+    - npm run typecheck
+    - npm test
+    - npm run build
+    - npm audit --audit-level=high # Fail on high/critical advisories, matching the GitHub gate.
+
+# --- PostgreSQL migration and concurrency tests -------------------------------------------------
+
+iam-postgres-migrations:
+  stage: database
+  image: python:3.12-bookworm
+  services:
+    - name: postgres:16
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: iam_service
+    IAM_TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/iam_service"
+  before_script:
+    - pip install "uv==${UV_VERSION}"
+    - uv sync --all-packages --dev
+  script:
+    - uv run pytest services/iam_service/tests/test_iam_migration_postgres.py -v
+
+ticket-postgres-idempotency:
+  stage: database
+  image: python:3.12-bookworm
+  services:
+    - name: postgres:16
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: ticket_service_test # Disposable DB; the destructive-test guard requires a *_test name.
+    ALLOW_DESTRUCTIVE_DATABASE_TESTS: "1" # Opt in explicitly, only against the *_test database.
+    TICKET_TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/ticket_service_test"
+  before_script:
+    - pip install "uv==${UV_VERSION}"
+    - uv sync --all-packages --dev
+  script:
+    - >-
+      uv run pytest
+      services/ticket_service/tests/test_idempotency_postgres.py
+      services/ticket_service/tests/test_migration_postgres.py
+      -v
+
+# --- Docker Compose integration (Docker-in-Docker) ----------------------------------------------
+# FF_NETWORK_PER_BUILD lets the job reach the dind daemon and its published ports via "docker".
+
+.dind:
+  tags: [dind]
+  image: docker:27.3.1
+  services: [docker:27.3.1-dind]
+  variables:
+    DOCKER_HOST: "tcp://docker:2376"
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: "/certs/client"
+    FF_NETWORK_PER_BUILD: "true"
+    COMPOSE_PROJECT_NAME: "appeals-platform" # Keep the backend network name deterministic.
+    COMPOSE_FILE: "infrastructure/docker-compose.yml"
+  before_script:
+    - apk add --no-cache curl python3 # curl for header checks; python3 for the stdlib-only smoke.
+
+compose-smoke:
+  extends: .dind
+  stage: integration
+  script:
+    - docker compose -f "$COMPOSE_FILE" up --build -d --wait --wait-timeout 300
+    - curl -fsS http://docker:8080/health/live
+    - curl -fsS http://docker:8080/health/ready
+    - python3 infrastructure/smoke/bff_e2e_smoke.py http://docker:8080
+    - |
+      # SPA shell must carry CSP/frame/nosniff/referrer/permissions/revalidation headers, and a
+      # fingerprinted asset must be immutable (CR-WEB-MEDIUM-003).
+      shell=$(curl -fsSI http://docker:8080/)
+      echo "$shell"
+      echo "$shell" | grep -qi "content-security-policy: .*frame-ancestors 'none'"
+      echo "$shell" | grep -qi "content-security-policy: .*object-src 'none'"
+      echo "$shell" | grep -qi "content-security-policy: .*base-uri 'self'"
+      echo "$shell" | grep -qi "x-content-type-options: nosniff"
+      echo "$shell" | grep -qi "x-frame-options: DENY"
+      echo "$shell" | grep -qi "referrer-policy: no-referrer"
+      echo "$shell" | grep -qi "permissions-policy:"
+      echo "$shell" | grep -qi "cache-control: no-cache"
+      asset=$(curl -fsS http://docker:8080/ | grep -o '/assets/[^"]*\.js' | head -n1)
+      test -n "$asset"
+      assethdr=$(curl -fsSI "http://docker:8080${asset}")
+      echo "$assethdr"
+      echo "$assethdr" | grep -qi "cache-control: public, max-age=31536000, immutable"
+    - |
+      # SPA container must run as the dedicated non-root user (CR-WEB-LOW-001).
+      idout=$(docker compose -f "$COMPOSE_FILE" exec -T web_frontend id)
+      echo "$idout"
+      echo "$idout" | grep -q "uid=10001"
+    - |
+      # Internal Ticket Service (no host port) must reject an unauthenticated request with 401.
+      code=$(docker run --rm --network appeals-platform_backend curlimages/curl:8.10.1 \
+        -s -o /dev/null -w "%{http_code}" \
+        "http://ticket_service:8000/api/v1/tickets/00000000-0000-4000-8000-000000000000")
+      echo "direct ticket status: $code"
+      test "$code" = "401"
+  after_script:
+    - docker compose -f "$COMPOSE_FILE" down -v
+
+compose-upgrade:
+  extends: .dind
+  stage: integration
+  script:
+    - docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 120 postgres
+    - |
+      # Simulate a pre-upgrade volume: each DROP runs as its own psql -c because DROP DATABASE
+      # cannot run inside a transaction block.
+      docker compose -f "$COMPOSE_FILE" exec -T postgres \
+        psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        -c "DROP DATABASE IF EXISTS ticket_service" \
+        -c "DROP DATABASE IF EXISTS bff_service" \
+        -c "DROP ROLE IF EXISTS ticket" \
+        -c "DROP ROLE IF EXISTS bff"
+    - docker compose -f "$COMPOSE_FILE" up --build -d --wait --wait-timeout 300
+    - curl -fsS http://docker:8080/health/live
+    - curl -fsS http://docker:8080/health/ready
+    - python3 infrastructure/smoke/bff_e2e_smoke.py http://docker:8080
+    - |
+      # Rotate to a URI-reserved-character password on the retained volume; the service builds the
+      # URL from discrete parts with percent-encoding, so it must still connect.
+      export TICKET_DB_PASSWORD='rot@ted:p/a?ss#9f3a'
+      docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300
+      curl -fsS http://docker:8080/health/ready
+    - python3 infrastructure/smoke/bff_e2e_smoke.py http://docker:8080
+  after_script:
+    - docker compose -f "$COMPOSE_FILE" down -v
+
+flowable-spike:
+  extends: .dind
+  stage: integration
+  variables:
+    # In dind the published Flowable port is on the daemon host, reached via "docker".
+    PA_FLOWABLE_BASE_URL: "http://docker:8081/flowable-rest/service"
+    PA_FLOWABLE_USERNAME: "rest-admin"
+    PA_FLOWABLE_PASSWORD: "test"
+  before_script:
+    # NOTE: uv sync builds the workspace on musl (alpine). If any wheel fails to build here, switch
+    # this job to a glibc image with the Docker CLI installed instead.
+    - apk add --no-cache python3 py3-pip curl
+    - pip install --break-system-packages "uv==${UV_VERSION}"
+  script:
+    - >-
+      docker compose
+      -f infrastructure/docker-compose.yml
+      -f infrastructure/docker-compose.spike.yml
+      up -d --wait --wait-timeout 300 postgres flowable
+    - uv sync --all-packages --dev
+    - uv run pytest services/process_adapter -v
+  after_script:
+    - >-
+      docker compose
+      -f infrastructure/docker-compose.yml
+      -f infrastructure/docker-compose.spike.yml
+      down -v
