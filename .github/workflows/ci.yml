@@ -157,11 +157,15 @@ jobs:
         run: docker compose -f infrastructure/docker-compose.yml up -d --wait --wait-timeout 120 postgres
 
       - name: Simulate a pre-upgrade volume (drop the newer service roles/databases)
+        # Each statement is sent as its own psql -c so it runs in its own transaction: DROP DATABASE
+        # cannot run inside a transaction block, so combining them in one -c string would fail.
         run: |
           docker compose -f infrastructure/docker-compose.yml exec -T postgres \
-            psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
-            "DROP DATABASE IF EXISTS ticket_service; DROP DATABASE IF EXISTS bff_service; \
-             DROP ROLE IF EXISTS ticket; DROP ROLE IF EXISTS bff;"
+            psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            -c "DROP DATABASE IF EXISTS ticket_service" \
+            -c "DROP DATABASE IF EXISTS bff_service" \
+            -c "DROP ROLE IF EXISTS ticket" \
+            -c "DROP ROLE IF EXISTS bff"
 
       - name: Bring up the full stack on the existing volume
         run: docker compose -f infrastructure/docker-compose.yml up --build -d --wait --wait-timeout 300
