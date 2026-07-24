@@ -6,8 +6,11 @@
 #   - RabbitMQ for messaging;
 #   - Flowable REST on its own database, reachable only on the internal network;
 #   - IAM, Ticket, and BFF services (each migrated by a one-shot job), reachable only on the internal
-#     network; the BFF is the single frontend API and the only service behind the reverse proxy;
-#   - Caddy reverse proxy publishing only the BFF — the sole service that publishes a host port.
+#     network; the BFF is the single frontend API;
+#   - the web frontend (React + TypeScript SPA) served as static files by Caddy, reachable only via
+#     the edge reverse proxy;
+#   - Caddy reverse proxy publishing the web frontend and the BFF from one origin (/api and /health
+#     to the BFF, everything else to the SPA) — the sole service that publishes a host port.
 #
 # Dev credentials below are non-secret placeholders with inline defaults so `docker compose up`
 # works out of the box. Override them via an .env file (see .env.example). Never commit real
@@ -331,10 +334,41 @@ services:
     networks:
       - backend
 
+  # Web frontend (React + TypeScript SPA), compiled to static assets and served by Caddy. Node runs
+  # only during the image build; the runtime image contains no Node. Reached from the host only
+  # through the reverse proxy.
+  web_frontend:
+    build:
+      context: ../apps/web-frontend
+      dockerfile: Dockerfile
+    # Least-privilege runtime (CR-WEB-LOW-001): non-root user (baked into the image), a read-only
+    # root filesystem with writable tmpfs only where Caddy needs it, no privilege escalation, and no
+    # Linux capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /data
+      - /config
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      # Busybox wget ships in the Caddy alpine image; a 200 on the SPA entry point means ready.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - backend
+
   reverse-proxy:
     image: caddy:2.8
     depends_on:
       bff_service:
+        condition: service_healthy
+      web_frontend:
         condition: service_healthy
     ports:
       - "${HTTP_PORT:-8080}:80"

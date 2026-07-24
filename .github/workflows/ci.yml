@@ -43,6 +43,43 @@ jobs:
       - name: English Markdown check
         run: uv run python tools/check_english_markdown.py
 
+  frontend:
+    name: Web frontend gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/web-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Format check (Prettier)
+        run: npm run format:check
+
+      - name: Type check (tsc)
+        run: npm run typecheck
+
+      - name: Tests (Vitest)
+        run: npm test
+
+      - name: Build (Vite)
+        run: npm run build
+
+      - name: Dependency audit (fail on high/critical)
+        run: npm audit --audit-level=high
+
   iam-postgres-migrations:
     name: IAM PostgreSQL migrations
     runs-on: ubuntu-latest
@@ -132,6 +169,33 @@ jobs:
 
       - name: Authenticated BFF E2E (login, create, workspace, role negatives)
         run: python infrastructure/smoke/bff_e2e_smoke.py http://localhost:8080
+
+      - name: Frontend security and cache headers (through the edge)
+        run: |
+          # The SPA shell must carry CSP, frame, nosniff, referrer, permissions and revalidation
+          # headers; a fingerprinted asset must be immutable (CR-WEB-MEDIUM-003).
+          shell=$(curl -fsSI http://localhost:8080/)
+          echo "$shell"
+          echo "$shell" | grep -qi "content-security-policy: .*frame-ancestors 'none'"
+          echo "$shell" | grep -qi "content-security-policy: .*object-src 'none'"
+          echo "$shell" | grep -qi "content-security-policy: .*base-uri 'self'"
+          echo "$shell" | grep -qi "x-content-type-options: nosniff"
+          echo "$shell" | grep -qi "x-frame-options: DENY"
+          echo "$shell" | grep -qi "referrer-policy: no-referrer"
+          echo "$shell" | grep -qi "permissions-policy:"
+          echo "$shell" | grep -qi "cache-control: no-cache"
+          asset=$(curl -fsS http://localhost:8080/ | grep -o '/assets/[^"]*\.js' | head -n1)
+          test -n "$asset"
+          assethdr=$(curl -fsSI "http://localhost:8080${asset}")
+          echo "$assethdr"
+          echo "$assethdr" | grep -qi "cache-control: public, max-age=31536000, immutable"
+
+      - name: Frontend runtime is non-root (least privilege)
+        run: |
+          # The SPA container must run as the dedicated non-root user (CR-WEB-LOW-001).
+          idout=$(docker compose -f infrastructure/docker-compose.yml exec -T web_frontend id)
+          echo "$idout"
+          echo "$idout" | grep -q "uid=10001"
 
       - name: Direct Ticket call must be denied (no gateway bypass)
         run: |

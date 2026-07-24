@@ -1,13 +1,31 @@
-# Reverse proxy configuration.
-# Publishes only the BFF service — the single API gateway the frontend talks to. IAM, Ticket,
-# Flowable, and RabbitMQ AMQP are intentionally not proxied and remain on the internal network.
+# Reverse proxy configuration (platform edge).
+#
+# Publishes the web frontend and the BFF from a single origin, so the SPA speaks to a same-origin
+# /api surface with no CORS. /api and the BFF health endpoints are routed to the BFF — the single
+# API gateway; everything else is served by the web_frontend container (the compiled SPA). IAM,
+# Ticket, Flowable, and RabbitMQ AMQP are intentionally not proxied and remain on the internal
+# network.
 
 :80 {
-	# Outer ingress ceiling (defence in depth): Caddy rejects an oversized request body with 413
-	# before it reaches the application, which enforces its own tighter per-endpoint limit
-	# (CR-BFF-R6-HIGH-001).
-	request_body {
-		max_size 2MB
+	# BFF API: forward gateway calls to the single API gateway. The outer ingress ceiling (defence
+	# in depth) rejects an oversized request body with 413 before it reaches the application, which
+	# enforces its own tighter per-endpoint limit (CR-BFF-R6-HIGH-001).
+	handle /api/* {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy bff_service:8000
 	}
-	reverse_proxy bff_service:8000
+
+	# Gateway health: kept on the edge so operational checks reach the BFF (not the SPA fallback).
+	handle /health/* {
+		reverse_proxy bff_service:8000
+	}
+
+	# Everything else: the compiled single-page app (client-side routing fallback in the SPA image).
+	# The SPA container serves on an unprivileged port under a non-root user (CR-WEB-LOW-001); its
+	# security and cache headers pass through unchanged.
+	handle {
+		reverse_proxy web_frontend:8080
+	}
 }

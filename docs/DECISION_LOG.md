@@ -216,6 +216,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-0006 (dev-auth-authorization) | Dev/local JWT auth, bcrypt hashing, and the role→permission matrix (per-service enforcement) | TASK_01D | Written |
 | ADR-0007 (bff-gateway) | BFF auth context via IAM `/auth/me`, gateway permission enforcement, workspace aggregation with flagged partial failures, stateless empty schema | TASK_01E-1 | Written |
 | ADR-0008 (ticket-authorization) | Ticket-service independent JWT verification, permission + fail-closed data-scope/confidentiality policy, and server-derived trusted actor | TASK_01E-1 (remediation) | Written |
+| ADR-0009 (web-frontend-foundation) | React+TS/Vite SPA (Node build-time only), gateway-only access, same-origin edge routing, sessionStorage auth forward-compatible with OIDC, TanStack Query + react-i18next | TASK_01E-2 | Written |
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
 | ADR-STORAGE-MIGRATION | Dual-read and file migration to GridFS | TASK_03B | Pending |

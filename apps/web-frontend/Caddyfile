@@ -1,0 +1,38 @@
+# Internal Caddy configuration for the web_frontend container.
+#
+# Serves the compiled single-page app as static files on an unprivileged port under a non-root user
+# (CR-WEB-LOW-001). Unknown paths fall back to index.html so the client-side router handles deep
+# links and reloads. This container sits behind the platform edge reverse proxy, which routes /api
+# and /health to the BFF and everything else here; the security and cache headers set below reach
+# the browser through that proxy.
+
+:8080 {
+	root * /usr/share/caddy
+	encode gzip
+
+	# Browser-security headers on every response, including the SPA deep-link fallback. The bundle is
+	# fully self-hosted (no CDN, inline script, or remote asset), so a strict same-origin CSP needs no
+	# 'unsafe-inline'/'unsafe-eval'. sessionStorage holds the bearer token, so tight XSS containment
+	# and clickjacking protection are mandatory (CR-WEB-MEDIUM-003).
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
+		# Do not advertise the server software.
+		-Server
+	}
+
+	# Fingerprinted build assets never change under a given name, so they are cached immutably.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	# The HTML shell and any SPA deep-link fallback must always revalidate so a new deploy is picked
+	# up and a stale shell is never pinned.
+	@notassets not path /assets/*
+	header @notassets Cache-Control "no-cache"
+
+	try_files {path} /index.html
+	file_server
+}

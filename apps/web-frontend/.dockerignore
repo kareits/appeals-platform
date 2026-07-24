@@ -1,0 +1,6 @@
+# Keep the frontend build context small and free of local artifacts.
+node_modules
+dist
+coverage
+.vite
+*.local

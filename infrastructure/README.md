@@ -11,7 +11,8 @@ Local development stack (TASK_00B, EP-0) defined in [`docker-compose.yml`](docke
 | `flowable` | flowable/flowable-rest:7.1.0 | none | Own database; reachable only on the internal network. |
 | `demo_service` | built from `services/demo_service/Dockerfile` | none | Reached only via the reverse proxy. |
 | `process_adapter` | built from `services/process_adapter/Dockerfile` | none | Adapter over Flowable (spike, TASK_00D); internal only. |
-| `reverse-proxy` | caddy:2.8 | `HTTP_PORT` (default 8080) → 80 | The only service that publishes a host port. |
+| `web_frontend` | built from `apps/web-frontend/Dockerfile` | none | React + TypeScript SPA compiled to static assets and served by Caddy; reached only via the reverse proxy. |
+| `reverse-proxy` | caddy:2.8 | `HTTP_PORT` (default 8080) → 80 | The only service that publishes a host port; routes `/api` and `/health` to the BFF and everything else to `web_frontend`. |
 
 Databases created on first init (see `postgres/init/01-create-databases.sh`): `demo_service`
 (owner `demo`) and `flowable` (owner `flowable`).
