@@ -31,8 +31,13 @@ def test_issue_and_verify_roundtrip() -> None:
     """A freshly issued token verifies and carries its claims."""
     issuer = _issuer()
     subject = uuid.uuid4()
+    team = uuid.uuid4()
     token, ttl = issuer.issue(
-        subject=subject, username="employee", roles=["EMPLOYEE"], permissions=["ticket:read"]
+        subject=subject,
+        username="employee",
+        roles=["EMPLOYEE"],
+        permissions=["ticket:read"],
+        teams=[str(team)],
     )
     assert ttl == 3600
     claims = issuer.verify(token)
@@ -40,12 +45,13 @@ def test_issue_and_verify_roundtrip() -> None:
     assert claims.username == "employee"
     assert claims.roles == ("EMPLOYEE",)
     assert claims.permissions == ("ticket:read",)
+    assert claims.teams == (str(team),)
 
 
 def test_verify_rejects_wrong_secret() -> None:
     """A token signed with another secret fails verification."""
     token, _ = _issuer("secret-one-0123456789-abcdefghij").issue(
-        subject=uuid.uuid4(), username="u", roles=[], permissions=[]
+        subject=uuid.uuid4(), username="u", roles=[], permissions=[], teams=[]
     )
     with pytest.raises(TokenError):
         _issuer("secret-two-0123456789-abcdefghij").verify(token)

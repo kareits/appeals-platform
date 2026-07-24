@@ -6,6 +6,32 @@ These are transport-agnostic; the API layer maps them to RFC 7807 Problem Detail
 from __future__ import annotations
 
 
+class AuthenticationError(Exception):
+    """Raised when a request carries no valid authenticated caller (mapped to 401)."""
+
+
+class AuthorizationError(Exception):
+    """Raised when an authenticated caller lacks the required permission or data scope (403)."""
+
+
+class IdempotencyConflictError(Exception):
+    """Raised when an idempotency key is reused with a different request payload (mapped to 409).
+
+    Idempotency keys are scoped to the authenticated caller; a mismatched payload for the same
+    caller/key is a conflict rather than a silent replay of the original result.
+    """
+
+
+class LegacyIdempotencyError(Exception):
+    """Raised when a request replays a pre-upgrade (legacy) idempotency key (mapped to 409).
+
+    Rows registered before idempotency keys were scoped to the caller stored a raw, unscoped key
+    with no request fingerprint and no trusted subject. Their original actor and canonical request
+    cannot be reconstructed, so a retry using that raw key is refused with a non-disclosing conflict
+    (reconciliation required) instead of creating a duplicate regulatory record (R3-HIGH-001).
+    """
+
+
 class TicketNotFoundError(Exception):
     """Raised when a referenced ticket does not exist."""
 

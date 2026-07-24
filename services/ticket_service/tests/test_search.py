@@ -9,17 +9,25 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ticket_service.application.commands import CreateTicketCommand, TicketSearchQuery
 from ticket_service.application.use_cases import create_manual_ticket, search_tickets
+from ticket_service.domain.authorization import SearchScope
 from ticket_service.domain.enums import IdentifierType
+from ticket_service.infrastructure.auth_tokens import TicketClaims
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
 
 _ASSIGNEE = uuid.uuid4()
 _TEAM = uuid.uuid4()
+# An organization-wide read scope so these filter tests see every seeded ticket; scope-specific
+# behavior is covered by the dedicated authorization tests.
+_ORG_SCOPE = SearchScope(
+    all_access=True, team_ids=frozenset(), subject=uuid.uuid4(), include_confidential=True
+)
 
 
 async def _seed(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
     make_applicant: Callable[..., object],
+    caller: TicketClaims,
 ) -> None:
     """Create a small, varied set of tickets for search assertions.
 
@@ -27,6 +35,7 @@ async def _seed(
         session_factory: The session factory.
         make_create_command: The command builder.
         make_applicant: The applicant builder.
+        caller: The registering caller.
     """
     allocator = RegistrationNumberAllocator("AP")
     commands = [
@@ -62,7 +71,7 @@ async def _seed(
     async with session_factory() as session:
         created = []
         for command in commands:
-            ticket, _ = await create_manual_ticket(session, allocator, command)
+            ticket, _ = await create_manual_ticket(session, allocator, command, caller)
             created.append(ticket)
         # Simulate a Flowable projection assigning the first ticket and moving the second.
         created[0].current_assignee_id = _ASSIGNEE
@@ -75,9 +84,10 @@ async def test_search_by_each_filter(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
     make_applicant: Callable[..., object],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """Each supported filter narrows the result set as expected."""
-    await _seed(session_factory, make_create_command, make_applicant)
+    await _seed(session_factory, make_create_command, make_applicant, make_caller())
 
     async with session_factory() as session:
 
@@ -90,7 +100,7 @@ async def test_search_by_each_filter(
             Returns:
                 The total number of matches.
             """
-            _, total = await search_tickets(session, query)
+            _, total = await search_tickets(session, query, _ORG_SCOPE)
             return total
 
         assert await count(TicketSearchQuery(identifier_value="900101300123")) == 1
@@ -114,13 +124,14 @@ async def test_search_by_registration_number(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
     make_applicant: Callable[..., object],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """An exact registration-number filter returns the single matching ticket."""
-    await _seed(session_factory, make_create_command, make_applicant)
+    await _seed(session_factory, make_create_command, make_applicant, make_caller())
 
     async with session_factory() as session:
         tickets, total = await search_tickets(
-            session, TicketSearchQuery(registration_number="AP-2026-000002")
+            session, TicketSearchQuery(registration_number="AP-2026-000002"), _ORG_SCOPE
         )
         assert total == 1
         assert tickets[0].registration_number == "AP-2026-000002"
@@ -130,13 +141,16 @@ async def test_search_pagination(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
     make_applicant: Callable[..., object],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """Pagination limits the page while reporting the full total."""
-    await _seed(session_factory, make_create_command, make_applicant)
+    await _seed(session_factory, make_create_command, make_applicant, make_caller())
 
     async with session_factory() as session:
-        page1, total = await search_tickets(session, TicketSearchQuery(page=1, page_size=2))
-        page2, _ = await search_tickets(session, TicketSearchQuery(page=2, page_size=2))
+        page1, total = await search_tickets(
+            session, TicketSearchQuery(page=1, page_size=2), _ORG_SCOPE
+        )
+        page2, _ = await search_tickets(session, TicketSearchQuery(page=2, page_size=2), _ORG_SCOPE)
 
     assert total == 3
     assert len(page1) == 2

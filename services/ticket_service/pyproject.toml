@@ -18,6 +18,7 @@ dependencies = [
     "asyncpg>=0.30",
     "aio-pika>=9.4",
     "tzdata>=2024.1",
+    "pyjwt>=2.9",
     "mfo-observability",
     "mfo-http",
 ]

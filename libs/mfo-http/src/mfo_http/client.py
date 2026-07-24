@@ -6,6 +6,7 @@ and a sensible default timeout, keeping cross-service tracing consistent.
 
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from types import TracebackType
 from typing import Any
 
@@ -22,14 +23,15 @@ class PlatformHttpClient:
     def __init__(
         self,
         base_url: str = "",
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        timeout: float | httpx.Timeout = DEFAULT_TIMEOUT_SECONDS,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         """Initialize the client.
 
         Args:
             base_url: An optional base URL prepended to request paths.
-            timeout: The default request timeout in seconds.
+            timeout: The default request timeout — a float (seconds) or a fine-grained
+                ``httpx.Timeout`` (connect/read/write/pool).
             client: An optional pre-configured ``httpx.AsyncClient`` (useful for testing).
         """
         self._client = client or httpx.AsyncClient(base_url=base_url, timeout=timeout)
@@ -50,6 +52,28 @@ class PlatformHttpClient:
         if correlation_id is not None:
             headers.setdefault(CORRELATION_ID_HEADER, correlation_id)
         return await self._client.request(method, url, headers=headers, **kwargs)
+
+    def stream(
+        self, method: str, url: str, **kwargs: Any
+    ) -> AbstractAsyncContextManager[httpx.Response]:
+        """Open a streaming request with the correlation header attached.
+
+        Used to read a response incrementally (for example, to enforce a hard byte ceiling before
+        the whole body is buffered). Use as ``async with client.stream(...) as response: ...``.
+
+        Args:
+            method: The HTTP method.
+            url: The request URL or path relative to the base URL.
+            **kwargs: Additional arguments forwarded to ``httpx.AsyncClient.stream``.
+
+        Returns:
+            An async context manager yielding the streaming response.
+        """
+        headers = dict(kwargs.pop("headers", {}) or {})
+        correlation_id = get_correlation_id()
+        if correlation_id is not None:
+            headers.setdefault(CORRELATION_ID_HEADER, correlation_id)
+        return self._client.stream(method, url, headers=headers, **kwargs)
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client and release its connections."""

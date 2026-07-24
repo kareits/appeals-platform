@@ -23,6 +23,7 @@ from ticket_service.application.use_cases import (
     list_comments,
     update_ticket_details,
 )
+from ticket_service.infrastructure.auth_tokens import TicketClaims
 from ticket_service.infrastructure.models import OutboxEvent
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
 
@@ -30,19 +31,21 @@ from ticket_service.infrastructure.registration import RegistrationNumberAllocat
 async def _create(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    caller: TicketClaims,
 ) -> uuid.UUID:
     """Create a ticket and return its identifier.
 
     Args:
         session_factory: The session factory.
         make_create_command: The command builder.
+        caller: The registering caller.
 
     Returns:
         The created ticket's identifier.
     """
     async with session_factory() as session:
         ticket, _ = await create_manual_ticket(
-            session, RegistrationNumberAllocator("AP"), make_create_command()
+            session, RegistrationNumberAllocator("AP"), make_create_command(), caller
         )
         await session.commit()
         return ticket.id
@@ -64,9 +67,11 @@ async def _pending_event_types(session: AsyncSession) -> list[str]:
 async def test_update_changes_fields_and_emits_event(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """Updating a field bumps the version and stages a ticket.updated.v1 with the changed field."""
-    ticket_id = await _create(session_factory, make_create_command)
+    caller = make_caller()
+    ticket_id = await _create(session_factory, make_create_command, caller)
 
     async with session_factory() as session:
         ticket = await update_ticket_details(
@@ -77,6 +82,7 @@ async def test_update_changes_fields_and_emits_event(
                 subject="Updated subject",
                 provided=frozenset({"subject"}),
             ),
+            caller,
         )
         await session.commit()
         assert ticket.subject == "Updated subject"
@@ -91,9 +97,11 @@ async def test_update_changes_fields_and_emits_event(
 async def test_update_without_changes_emits_no_event(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """Providing the same value as stored changes nothing and stages no update event."""
-    ticket_id = await _create(session_factory, make_create_command)
+    caller = make_caller()
+    ticket_id = await _create(session_factory, make_create_command, caller)
 
     async with session_factory() as session:
         await update_ticket_details(
@@ -104,6 +112,7 @@ async def test_update_without_changes_emits_no_event(
                 subject="Restructuring request",
                 provided=frozenset({"subject"}),
             ),
+            caller,
         )
         await session.commit()
         assert TICKET_UPDATED not in await _pending_event_types(session)
@@ -112,9 +121,11 @@ async def test_update_without_changes_emits_no_event(
 async def test_update_version_conflict(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """A stale expected version is rejected."""
-    ticket_id = await _create(session_factory, make_create_command)
+    caller = make_caller()
+    ticket_id = await _create(session_factory, make_create_command, caller)
 
     async with session_factory() as session:
         with pytest.raises(VersionConflictError):
@@ -126,15 +137,18 @@ async def test_update_version_conflict(
                     subject="X",
                     provided=frozenset({"subject"}),
                 ),
+                caller,
             )
 
 
 async def test_classify_sets_codes_and_emits_event(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """Classifying sets the codes and stages ticket.classified.v1."""
-    ticket_id = await _create(session_factory, make_create_command)
+    caller = make_caller()
+    ticket_id = await _create(session_factory, make_create_command, caller)
 
     async with session_factory() as session:
         ticket = await classify_ticket(
@@ -146,6 +160,7 @@ async def test_classify_sets_codes_and_emits_event(
                 classifier_code="COMPLAINT",
                 priority_code="HIGH",
             ),
+            caller,
         )
         await session.commit()
         assert ticket.classifier_code == "COMPLAINT"
@@ -156,31 +171,31 @@ async def test_classify_sets_codes_and_emits_event(
 async def test_add_and_list_comments(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
-    """A comment can be added and then listed."""
-    ticket_id = await _create(session_factory, make_create_command)
-    author = uuid.uuid4()
+    """A comment can be added and then listed; the author is the verified caller."""
+    caller = make_caller()
+    ticket_id = await _create(session_factory, make_create_command, caller)
 
     async with session_factory() as session:
-        await add_comment(
-            session, AddCommentCommand(ticket_id=ticket_id, author_id=author, body="Note")
-        )
+        await add_comment(session, AddCommentCommand(ticket_id=ticket_id, body="Note"), caller)
         await session.commit()
 
     async with session_factory() as session:
-        comments = await list_comments(session, ticket_id)
+        comments = await list_comments(session, ticket_id, caller)
         assert len(comments) == 1
         assert comments[0].body == "Note"
-        assert comments[0].author_id == author
+        # The author is derived from the caller, never client input.
+        assert comments[0].author_id == caller.subject
 
 
 async def test_comment_on_missing_ticket_raises(
     session_factory: async_sessionmaker[AsyncSession],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """Commenting on a non-existent ticket raises not-found."""
     async with session_factory() as session:
         with pytest.raises(TicketNotFoundError):
             await add_comment(
-                session,
-                AddCommentCommand(ticket_id=uuid.uuid4(), author_id=uuid.uuid4(), body="x"),
+                session, AddCommentCommand(ticket_id=uuid.uuid4(), body="x"), make_caller()
             )

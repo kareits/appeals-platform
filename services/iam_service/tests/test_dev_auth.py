@@ -71,6 +71,7 @@ async def test_me_rejects_token_with_unknown_role(client: AsyncClient, issuer: T
         username="ghost",
         roles=["EMPLOYEE", "WIZARD"],  # WIZARD is not a known role
         permissions=["ticket:read"],
+        teams=[],
     )
     response = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401

@@ -8,6 +8,7 @@ outside production only (docs/06): production must move to corporate OIDC (ADR-A
 from __future__ import annotations
 
 from functools import lru_cache
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -56,6 +57,14 @@ class Settings(BaseSettings):
 
     environment: str = "local"
     database_url: str = "sqlite+aiosqlite:///./iam_service.db"
+    # Discrete PostgreSQL connection parts. When host/user/name are all set, the URL is built with a
+    # percent-encoded password so a URI-reserved character in a secret cannot corrupt it
+    # (CR-BFF-R3-MEDIUM-003); otherwise ``database_url`` is used (local SQLite/dev).
+    db_host: str | None = None
+    db_port: int = 5432
+    db_user: str | None = None
+    db_password: str | None = None
+    db_name: str | None = None
     dev_auth_enabled: bool = True
     # TODO(TASK_06B): Replace the dev symmetric secret with corporate OIDC / asymmetric keys and
     # remove the insecure default once secret management and the IdP are in place.
@@ -64,6 +73,23 @@ class Settings(BaseSettings):
     jwt_issuer: str = "mfo-iam"
     jwt_audience: str = "mfo-appeals"
     jwt_ttl_seconds: int = 3600
+
+    def resolved_database_url(self) -> str:
+        """Return the async database URL, building it safely from discrete parts when provided.
+
+        When ``db_host``/``db_user``/``db_name`` are set, the URL is built with a percent-encoded
+        user and password so a secret containing URI-reserved characters cannot change URL parsing
+        (R3-MEDIUM-003). Otherwise ``database_url`` is used as-is (local SQLite/dev).
+
+        Returns:
+            The resolved SQLAlchemy async database URL.
+        """
+        if self.db_host and self.db_user and self.db_name:
+            user = quote(self.db_user, safe="")
+            password = quote(self.db_password or "", safe="")
+            netloc = f"{user}:{password}@{self.db_host}:{self.db_port}"
+            return f"postgresql+asyncpg://{netloc}/{self.db_name}"
+        return self.database_url
 
     @property
     def dev_auth_available(self) -> bool:

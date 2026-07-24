@@ -7,8 +7,9 @@ dictionaries, the business **registration number**, comments, and the appeal lif
 
 **Scope through TASK_01C (this increment):** the data model and registration number (TASK_01A);
 use cases, search, and `ticket.*` events (TASK_01B); and decision, close validation, retention, SLA
-deadlines, the audit log, and legal hold (TASK_01C). Authentication is provided later by IAM/BFF
-(TASK_01D/01E).
+deadlines, the audit log, and legal hold (TASK_01C). The service **independently authenticates and
+authorizes** every request (ADR-0008): it verifies the IAM-issued access token itself and enforces
+its own permission and data-scope policy, even when called directly (not via the BFF).
 
 ## What it provides
 
@@ -128,10 +129,25 @@ monotonic sequence (for example `AP-2026-000001`). Uniqueness is guaranteed by l
 - **validation:** `test_migration` applies/seeds/reverts against SQLite; `test_models` covers the
   unique registration number, nullable demographics, and optimistic locking.
 
+## Authentication and authorization
+
+Every route requires a valid IAM-issued bearer token, verified independently by the service (fixed
+HS256 allowlist; signature, issuer, audience, expiry, and claim types), so a direct internal call is
+still enforced (ADR-0008). Each route requires a specific `ticket:*` permission claim (401 without a
+valid token, with `WWW-Authenticate: Bearer`; 403 without the permission or data scope). Object-level
+data scope is a minimal, fail-closed EP-1 policy (`domain/authorization.py`): oversight/analytics/
+audit roles read across teams; operational roles are limited to their team, assignments, and
+registrations; confidential appeals are restricted to an oversight/audit subset. The actor for every
+mutation and audit record is the verified token subject — `decisionBy`/`actorId`/`authorId` are not
+accepted from the client. The shared symmetric secret (`TICKET_JWT_SECRET`, must equal
+`IAM_JWT_SECRET`) is a dev/local scheme; production moves to corporate OIDC (TASK_06).
+
 ## Known limitations
 
 - SQLite for local (non-Docker) runs and unit tests; the compose stack uses PostgreSQL.
 - Reference dictionaries hold draft codes pending the approved business taxonomy (Q-A1).
 - Case-insensitive name search relies on the PostgreSQL `ILIKE` collation; SQLite folds ASCII only.
-- No authentication yet (TASK_01D/01E); actor identifiers are supplied by the caller.
-- Not yet wired into `docker-compose`.
+- The data-scope/confidentiality policy is a minimal fail-closed EP-1 baseline (ADR-0008) pending the
+  approved business matrix; production still needs corporate OIDC/asymmetric verification (TASK_06).
+- Wired into `docker-compose` (a one-shot `ticket_migrate` job plus the `ticket_service` API,
+  reachable only on the internal network and via the BFF).

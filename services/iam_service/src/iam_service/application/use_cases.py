@@ -40,6 +40,7 @@ class AuthResult:
         user: The authenticated user.
         roles: The user's role names.
         permissions: The permission strings resolved from those roles.
+        teams: The identifiers of the teams the user belongs to.
     """
 
     token: str
@@ -47,6 +48,7 @@ class AuthResult:
     user: User
     roles: tuple[str, ...]
     permissions: tuple[str, ...]
+    teams: tuple[str, ...]
 
 
 def _sorted_roles(user: User) -> list[Role]:
@@ -100,11 +102,15 @@ async def authenticate_dev(
     roles = _sorted_roles(user)
     role_names = tuple(role.value for role in roles)
     permissions = tuple(sorted(permission.value for permission in resolve_permissions(set(roles))))
+    # Team membership travels in the token so downstream services can enforce team/data scope from
+    # self-contained claims without calling IAM. A user currently belongs to at most one team.
+    teams = (str(user.team_id),) if user.team_id is not None else ()
     token, expires_in = issuer.issue(
         subject=user.id,
         username=user.username,
         roles=list(role_names),
         permissions=list(permissions),
+        teams=list(teams),
     )
     AuditRepository(session).record(
         entity_id=user.id,
@@ -118,6 +124,7 @@ async def authenticate_dev(
         user=user,
         roles=role_names,
         permissions=permissions,
+        teams=teams,
     )
 
 

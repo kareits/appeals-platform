@@ -83,6 +83,10 @@ class Ticket(Base):
         version: Optimistic-locking version, managed by SQLAlchemy.
         contract_number: Related credit-contract number, if any (searchable).
         idempotency_key: Optional client-supplied key that makes registration retry-safe.
+        registered_by: The verified subject who registered the appeal (server-derived; used for
+            ownership-based data scope until Flowable assigns a team/assignee).
+        is_confidential: Whether the appeal is restricted to an oversight/audit subset of roles
+            (authorization data-scope; EP-1 fail-closed policy, ADR-0008).
     """
 
     __tablename__ = "ticket"
@@ -99,13 +103,20 @@ class Ticket(Base):
         Index("ix_ticket_received_at", "received_at"),
         Index("ix_ticket_registered_at", "registered_at"),
         Index("ix_ticket_contract_number", "contract_number"),
+        Index("ix_ticket_registered_by", "registered_by"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid7)
     registration_number: Mapped[str] = mapped_column(String(_CODE_LEN), unique=True, index=True)
+    # Stores a SHA-256 hash of the subject-namespaced key ("<subject>:<key>"), so it is a per-caller
+    # namespace rather than a global object-lookup oracle, and the fixed 64-char digest fits the
+    # existing column width (CR-BFF-RR-BLOCKER-001).
     idempotency_key: Mapped[str | None] = mapped_column(
         String(_CODE_LEN), unique=True, nullable=True
     )
+    # SHA-256 fingerprint of the registration payload; a same-key replay with a different payload is
+    # a conflict, not a silent replay of the original (CR-BFF-RR-BLOCKER-001).
+    idempotency_fingerprint: Mapped[str | None] = mapped_column(String(_CODE_LEN), nullable=True)
 
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -143,6 +154,9 @@ class Ticket(Base):
 
     retention_until: Mapped[date | None] = mapped_column(Date(), nullable=True)
     legal_hold: Mapped[bool] = mapped_column(Boolean(), default=False)
+
+    registered_by: Mapped[uuid.UUID | None] = mapped_column(Uuid(), nullable=True)
+    is_confidential: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
 
     version: Mapped[int] = mapped_column(Integer(), nullable=False)
 

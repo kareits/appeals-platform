@@ -31,7 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Fail closed on unsafe dev-auth configuration before serving any request (CR-IAM-HIGH-002).
     resolved.validate_runtime()
     configure_logging()
-    engine = create_engine(resolved.database_url)
+    engine = create_engine(resolved.resolved_database_url())
     session_factory = create_session_factory(engine)
 
     @asynccontextmanager

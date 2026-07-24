@@ -98,6 +98,7 @@ class CreateTicketRequest(RequestModel):
         applicant: The consumer party.
         contract_number: Related credit-contract number, if any.
         representative: An optional representative party.
+        is_confidential: Whether to restrict the appeal to the confidential-access role subset.
     """
 
     received_at: AwareDatetime
@@ -110,6 +111,7 @@ class CreateTicketRequest(RequestModel):
     applicant: ApplicantModel
     contract_number: CodeStr | None = None
     representative: ApplicantModel | None = None
+    is_confidential: bool = False
 
     @model_validator(mode="after")
     def _check_party_roles(self) -> Self:
@@ -170,18 +172,19 @@ class ClassifyRequest(RequestModel):
 class RecordDecisionRequest(RequestModel):
     """Request body to record a decision.
 
+    The deciding employee is derived server-side from the authenticated caller and is not part of
+    the request (CR-BFF-BLOCKER-001 trusted actor).
+
     Attributes:
         expected_version: Version the client last observed.
         decision_code: Decision code (dictionary ``decision``).
         decision_text: Full decision text.
-        decision_by: Employee recording the decision.
         decision_summary: Optional short decision summary.
     """
 
     expected_version: VersionInt
     decision_code: CodeStr
     decision_text: BodyStr
-    decision_by: uuid.UUID
     decision_summary: SubjectStr | None = None
 
 
@@ -193,15 +196,12 @@ class CloseTicketRequest(RequestModel):
         closure_reason_code: Closure-reason code (dictionary ``closure_reason``).
         response_sent_at: When a response was sent, if any.
         no_response_reason: Justification when no response was sent.
-        actor_id: Identifier of the actor performing the closure (interim caller-supplied; a
-            trusted authenticated actor arrives with IAM, TASK_01D).
     """
 
     expected_version: VersionInt
     closure_reason_code: CodeStr
     response_sent_at: AwareDatetime | None = None
     no_response_reason: SubjectStr | None = None
-    actor_id: uuid.UUID | None = None
 
 
 class LegalHoldRequest(RequestModel):
@@ -211,25 +211,23 @@ class LegalHoldRequest(RequestModel):
         expected_version: Version the client last observed.
         legal_hold: The desired legal-hold state.
         reason: Optional reason recorded in the audit log.
-        actor_id: Identifier of the actor performing the change (interim caller-supplied; a trusted
-            authenticated actor arrives with IAM, TASK_01D).
     """
 
     expected_version: VersionInt
     legal_hold: bool
     reason: str | None = None
-    actor_id: uuid.UUID | None = None
 
 
 class CommentRequest(RequestModel):
     """Request body to add a comment.
 
+    The author is derived server-side from the authenticated caller and is not part of the request
+    (CR-BFF-BLOCKER-001 trusted actor).
+
     Attributes:
-        author_id: Identifier of the comment author.
         body: Comment text.
     """
 
-    author_id: uuid.UUID
     body: BodyStr
 
 
@@ -289,6 +287,7 @@ class TicketResponse(ResponseModel):
         legal_due_at: Regulatory deadline, if computed.
         internal_due_at: Internal SLA deadline, if computed.
         legal_hold: Whether the ticket is under legal hold.
+        is_confidential: Whether the appeal is restricted to the confidential-access role subset.
         version: Optimistic-locking version.
         applicants: The parties attached to the ticket.
     """
@@ -322,6 +321,7 @@ class TicketResponse(ResponseModel):
     no_response_reason: str | None
     retention_until: date | None
     legal_hold: bool
+    is_confidential: bool
     version: int
     applicants: list[ApplicantResponse]
 
@@ -469,6 +469,7 @@ def ticket_to_response(ticket: Ticket) -> TicketResponse:
         no_response_reason=ticket.no_response_reason,
         retention_until=ticket.retention_until,
         legal_hold=ticket.legal_hold,
+        is_confidential=ticket.is_confidential,
         version=ticket.version,
         applicants=[applicant_to_response(a) for a in ticket.applicants],
     )

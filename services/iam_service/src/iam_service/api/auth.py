@@ -7,6 +7,7 @@ the audit write, and map the result (and failures) to responses. No business log
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -92,6 +93,7 @@ async def dev_login(
         username=result.user.username,
         roles=_roles_from_claims(result.roles),
         permissions=list(result.permissions),
+        teams=[uuid.UUID(team) for team in result.teams],
     )
 
 
@@ -112,4 +114,5 @@ async def get_current_subject(
         username=claims.username,
         roles=_roles_from_claims(claims.roles),
         permissions=list(claims.permissions),
+        teams=[uuid.UUID(team) for team in claims.teams],
     )

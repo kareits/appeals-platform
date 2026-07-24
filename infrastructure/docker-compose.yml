@@ -1,11 +1,13 @@
 # Local development infrastructure for the MFO Appeals Platform (TASK_00B).
 #
 # Topology:
-#   - one PostgreSQL cluster with separate databases and users per service (ADR-004);
+#   - one PostgreSQL cluster with separate databases and users per service (ADR-004), provisioned
+#     idempotently by a one-shot db_provision job so existing volumes upgrade without recreation;
 #   - RabbitMQ for messaging;
 #   - Flowable REST on its own database, reachable only on the internal network;
-#   - the demo service, reachable only via the reverse proxy;
-#   - Caddy reverse proxy, the only service that publishes a host port.
+#   - IAM, Ticket, and BFF services (each migrated by a one-shot job), reachable only on the internal
+#     network; the BFF is the single frontend API and the only service behind the reverse proxy;
+#   - Caddy reverse proxy publishing only the BFF — the sole service that publishes a host port.
 #
 # Dev credentials below are non-secret placeholders with inline defaults so `docker compose up`
 # works out of the box. Override them via an .env file (see .env.example). Never commit real
@@ -23,6 +25,8 @@ services:
       DEMO_DB_PASSWORD: ${DEMO_DB_PASSWORD:-demo}
       FLOWABLE_DB_PASSWORD: ${FLOWABLE_DB_PASSWORD:-flowable}
       IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:-iam}
+      TICKET_DB_PASSWORD: ${TICKET_DB_PASSWORD:-ticket}
+      BFF_DB_PASSWORD: ${BFF_DB_PASSWORD:-bff}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -76,6 +80,30 @@ services:
     networks:
       - backend
 
+  # Idempotent provisioning of service roles/databases. Runs every startup and creates anything
+  # missing without deleting data, so an existing (pre-upgrade) pgdata volume is brought up to date
+  # without recreation (CR-BFF-HIGH-003). Migration jobs depend on it completing.
+  db_provision:
+    image: postgres:16
+    entrypoint: ["bash", "/provision/provision-databases.sh"]
+    environment:
+      PGHOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DEMO_DB_PASSWORD: ${DEMO_DB_PASSWORD:-demo}
+      FLOWABLE_DB_PASSWORD: ${FLOWABLE_DB_PASSWORD:-flowable}
+      IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:-iam}
+      TICKET_DB_PASSWORD: ${TICKET_DB_PASSWORD:-ticket}
+      BFF_DB_PASSWORD: ${BFF_DB_PASSWORD:-bff}
+    volumes:
+      - ./postgres/provision:/provision:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - backend
+
   demo_service:
     build:
       context: ..
@@ -111,10 +139,16 @@ services:
     command: ["sh", "-c", "cd /app/services/iam_service && alembic upgrade head"]
     environment:
       IAM_ENVIRONMENT: local
-      IAM_DATABASE_URL: postgresql+asyncpg://iam:${IAM_DB_PASSWORD:-iam}@postgres:5432/iam_service
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      IAM_DB_HOST: postgres
+      IAM_DB_USER: iam
+      IAM_DB_NAME: iam_service
+      IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:-iam}
     depends_on:
       postgres:
         condition: service_healthy
+      db_provision:
+        condition: service_completed_successfully
     restart: "no"
     networks:
       - backend
@@ -127,7 +161,11 @@ services:
       # Dev auth is available only for the closed environment allowlist (local/dev/test); this local
       # compose stack uses "local" so seeded dev login works (CR-IAM-HIGH-002).
       IAM_ENVIRONMENT: local
-      IAM_DATABASE_URL: postgresql+asyncpg://iam:${IAM_DB_PASSWORD:-iam}@postgres:5432/iam_service
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      IAM_DB_HOST: postgres
+      IAM_DB_USER: iam
+      IAM_DB_NAME: iam_service
+      IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:-iam}
       # Dev-only symmetric secret for the temporary dev/local auth (docs/06). Never a real secret;
       # production moves to corporate OIDC (ADR-AUTH-OIDC, TASK_06).
       IAM_JWT_SECRET: ${IAM_JWT_SECRET:-dev-insecure-secret-change-me-please}
@@ -148,6 +186,122 @@ services:
       retries: 5
       start_period: 15s
     # No published ports: reached only on the internal network (and via the future BFF).
+    networks:
+      - backend
+
+  # One-shot migration job: brings the Ticket schema to head before the API starts.
+  ticket_migrate:
+    build:
+      context: ..
+      dockerfile: services/ticket_service/Dockerfile
+    command: ["sh", "-c", "cd /app/services/ticket_service && alembic upgrade head"]
+    environment:
+      TICKET_ENVIRONMENT: docker
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      TICKET_DB_HOST: postgres
+      TICKET_DB_USER: ticket
+      TICKET_DB_NAME: ticket_service
+      TICKET_DB_PASSWORD: ${TICKET_DB_PASSWORD:-ticket}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db_provision:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - backend
+
+  ticket_service:
+    build:
+      context: ..
+      dockerfile: services/ticket_service/Dockerfile
+    environment:
+      TICKET_ENVIRONMENT: docker
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      TICKET_DB_HOST: postgres
+      TICKET_DB_USER: ticket
+      TICKET_DB_NAME: ticket_service
+      TICKET_DB_PASSWORD: ${TICKET_DB_PASSWORD:-ticket}
+      # The ticket service verifies IAM-issued access tokens independently; the secret must match
+      # IAM's (dev/local scheme, docs/06). Never a real secret; production moves to OIDC (TASK_06).
+      TICKET_JWT_SECRET: ${IAM_JWT_SECRET:-dev-insecure-secret-change-me-please}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ticket_migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # No published ports: reached only on the internal network (and via the BFF).
+    networks:
+      - backend
+
+  # One-shot migration job: applies the BFF's (currently empty) schema baseline before the API
+  # starts, so the gateway owns and versions its own schema (ADR-004).
+  bff_migrate:
+    build:
+      context: ..
+      dockerfile: services/bff_service/Dockerfile
+    command: ["sh", "-c", "cd /app/services/bff_service && alembic upgrade head"]
+    environment:
+      BFF_ENVIRONMENT: docker
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      BFF_DB_HOST: postgres
+      BFF_DB_USER: bff
+      BFF_DB_NAME: bff_service
+      BFF_DB_PASSWORD: ${BFF_DB_PASSWORD:-bff}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db_provision:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - backend
+
+  bff_service:
+    build:
+      context: ..
+      dockerfile: services/bff_service/Dockerfile
+    environment:
+      BFF_ENVIRONMENT: docker
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      BFF_DB_HOST: postgres
+      BFF_DB_USER: bff
+      BFF_DB_NAME: bff_service
+      BFF_DB_PASSWORD: ${BFF_DB_PASSWORD:-bff}
+      # Downstream service base URLs on the internal network.
+      BFF_IAM_BASE_URL: http://iam_service:8000
+      BFF_TICKET_BASE_URL: http://ticket_service:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bff_migrate:
+        condition: service_completed_successfully
+      iam_service:
+        condition: service_healthy
+      ticket_service:
+        condition: service_healthy
+    healthcheck:
+      # Readiness (not liveness) so the container is healthy only once its own database is usable.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # Reached from the host only through the reverse proxy (the single published entry point).
     networks:
       - backend
 
@@ -180,7 +334,7 @@ services:
   reverse-proxy:
     image: caddy:2.8
     depends_on:
-      demo_service:
+      bff_service:
         condition: service_healthy
     ports:
       - "${HTTP_PORT:-8080}:80"

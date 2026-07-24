@@ -115,11 +115,8 @@ async def test_comments_roundtrip(client: AsyncClient) -> None:
     """A comment can be posted and then listed."""
     created = (await client.post("/api/v1/tickets", json=_create_body())).json()
     ticket_id = created["id"]
-    author = str(uuid.uuid4())
 
-    posted = await client.post(
-        f"/api/v1/tickets/{ticket_id}/comments", json={"authorId": author, "body": "Note"}
-    )
+    posted = await client.post(f"/api/v1/tickets/{ticket_id}/comments", json={"body": "Note"})
     assert posted.status_code == 201
 
     listed = await client.get(f"/api/v1/tickets/{ticket_id}/comments")
@@ -150,7 +147,6 @@ async def test_decision_then_close_flow(client: AsyncClient) -> None:
             "expectedVersion": 1,
             "decisionCode": "REJECTED",
             "decisionText": "Rationale",
-            "decisionBy": str(uuid.uuid4()),
         },
     )
     assert decided.status_code == 200

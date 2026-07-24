@@ -12,6 +12,8 @@ info:
 servers:
   - url: /api/v1
     description: Versioned base path (mounted by the service).
+security:
+  - bearerAuth: []
 tags:
   - name: tickets
     description: Appeal registration, card, classification, comments, and search.
@@ -24,8 +26,11 @@ paths:
       description: >-
         Registers any written appeal, allocates a unique registration number, and stores the
         applicant (and optional representative). Emits ticket.created.v1 via the transactional
-        outbox. Supply Idempotency-Key to make retries safe: a repeated key returns the originally
-        created ticket instead of creating a duplicate.
+        outbox. Supply Idempotency-Key to make retries safe: idempotency is scoped to the
+        authenticated caller, so a repeated key from the same caller with the same payload returns
+        the original ticket, a different payload yields 409, and a legacy (pre-scoping) key yields a
+        409 reconciliation-required. Registering isConfidential=true requires a confidentiality-
+        cleared role (SUPERVISOR/OMBUDSMAN); otherwise 403.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -52,6 +57,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/TicketResponse'
         '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '409':
           $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
@@ -307,6 +318,17 @@ paths:
         '404':
           $ref: '#/components/responses/Problem'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Signed access token issued by the IAM service. The ticket service verifies it independently
+        (signature, fixed algorithm allowlist, issuer, audience, expiry) and enforces its own
+        permission and data-scope policy on every request, even when called directly (not via the
+        BFF). Missing/invalid tokens yield 401 with a WWW-Authenticate: Bearer challenge; missing
+        permission or data scope yields 403.
   parameters:
     TicketId:
       name: ticketId
@@ -377,6 +399,7 @@ components:
             - {$ref: '#/components/schemas/ApplicantInput'}
             - {type: 'null'}
           description: Optional representative party.
+        isConfidential: {type: boolean, default: false, description: Restrict the appeal to the confidential-access role subset.}
     UpdateTicketRequest:
       type: object
       additionalProperties: false
@@ -400,13 +423,15 @@ components:
     RecordDecisionRequest:
       type: object
       additionalProperties: false
-      required: [expectedVersion, decisionCode, decisionText, decisionBy]
+      description: >-
+        Records a decision. The deciding employee is derived server-side from the authenticated
+        caller and is not part of the request (trusted actor).
+      required: [expectedVersion, decisionCode, decisionText]
       properties:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
         decisionCode: {type: string, minLength: 1, maxLength: 64, description: Decision code (dictionary 'decision').}
         decisionSummary: {type: [string, "null"], minLength: 1, maxLength: 512, description: Short decision summary.}
         decisionText: {type: string, minLength: 1, description: Full decision text.}
-        decisionBy: {type: string, format: uuid, description: Employee recording the decision.}
     CloseTicketRequest:
       type: object
       additionalProperties: false
@@ -419,7 +444,6 @@ components:
         closureReasonCode: {type: string, minLength: 1, maxLength: 64, description: Closure-reason code (dictionary 'closure_reason').}
         responseSentAt: {type: [string, "null"], format: date-time, description: When the response was sent, if any.}
         noResponseReason: {type: [string, "null"], minLength: 1, maxLength: 512, description: Justification when no response was sent.}
-        actorId: {type: [string, "null"], format: uuid, description: Actor performing the closure (interim caller-supplied; trusted actor with IAM in TASK_01D).}
     LegalHoldRequest:
       type: object
       additionalProperties: false
@@ -428,13 +452,14 @@ components:
         expectedVersion: {type: integer, minimum: 1, description: Version the client last observed.}
         legalHold: {type: boolean, description: Whether the ticket is under legal hold.}
         reason: {type: [string, "null"], description: Optional reason recorded in the audit log.}
-        actorId: {type: [string, "null"], format: uuid, description: Actor performing the change (interim caller-supplied; trusted actor with IAM in TASK_01D).}
     CommentRequest:
       type: object
       additionalProperties: false
-      required: [authorId, body]
+      description: >-
+        Adds a comment. The author is derived server-side from the authenticated caller and is not
+        part of the request (trusted actor).
+      required: [body]
       properties:
-        authorId: {type: string, format: uuid, description: Identifier of the comment author.}
         body: {type: string, minLength: 1, description: Comment text.}
     ApplicantResponse:
       type: object
@@ -460,7 +485,7 @@ components:
       required:
         [id, registrationNumber, receivedAt, registeredAt, sourceChannelCode, subject, description,
          productCode, classifierCode, priorityCode, currentStatusCode, currentStageCode, legalHold,
-         version, applicants]
+         isConfidential, version, applicants]
       properties:
         id: {type: string, format: uuid}
         registrationNumber: {type: string}
@@ -491,6 +516,7 @@ components:
         noResponseReason: {type: [string, "null"]}
         retentionUntil: {type: [string, "null"], format: date}
         legalHold: {type: boolean}
+        isConfidential: {type: boolean, description: Whether the appeal is restricted to the confidential-access role subset.}
         version: {type: integer}
         applicants:
           type: array

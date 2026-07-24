@@ -14,6 +14,7 @@ from mfo_observability import configure_logging
 
 from ticket_service.api import health, tickets
 from ticket_service.config import Settings, get_settings
+from ticket_service.infrastructure.auth_tokens import TokenVerifier
 from ticket_service.infrastructure.db import create_engine, create_session_factory
 from ticket_service.infrastructure.outbox import OutboxRelay, RabbitMqEventPublisher
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
@@ -51,7 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     resolved = settings or get_settings()
     configure_logging()
-    engine = create_engine(resolved.database_url)
+    engine = create_engine(resolved.resolved_database_url())
     session_factory = create_session_factory(engine)
 
     @asynccontextmanager
@@ -90,6 +91,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = session_factory
     app.state.registration_allocator = RegistrationNumberAllocator(
         resolved.registration_number_prefix
+    )
+    app.state.token_verifier = TokenVerifier(
+        secret=resolved.jwt_secret,
+        algorithms=resolved.jwt_algorithms,
+        issuer=resolved.jwt_issuer,
+        audience=resolved.jwt_audience,
     )
     app.include_router(health.router)
     app.include_router(tickets.router)

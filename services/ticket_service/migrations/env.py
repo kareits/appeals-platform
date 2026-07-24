@@ -24,7 +24,7 @@ def _database_url() -> str:
     Returns:
         The URL from the Alembic config when set, otherwise the application settings value.
     """
-    return config.get_main_option("sqlalchemy.url") or get_settings().database_url
+    return config.get_main_option("sqlalchemy.url") or get_settings().resolved_database_url()
 
 
 def run_migrations_offline() -> None:

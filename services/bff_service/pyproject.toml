@@ -1,0 +1,36 @@
+# BFF Service — the single API gateway for the web frontend of the MFO Appeals Platform.
+# Establishes the caller's auth context (IAM), enforces permission claims, aggregates the appeal
+# workspace, and normalizes errors (TASK_01E-1). Owns no domain data. Scaffolded from
+# services/demo_service.
+
+[project]
+name = "bff-service"
+version = "0.1.0"
+description = "Backend-for-Frontend gateway: auth context, permission enforcement, workspace aggregation, error normalization."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "aiosqlite>=0.20",
+    "asyncpg>=0.30",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+    "mfo-observability",
+    "mfo-http",
+]
+
+[dependency-groups]
+dev = [
+    "mfo-testing",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bff_service"]

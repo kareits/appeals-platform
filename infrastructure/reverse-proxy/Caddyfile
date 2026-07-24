@@ -1,7 +1,13 @@
 # Reverse proxy configuration.
-# Publishes only the demo service. Flowable and RabbitMQ AMQP are intentionally not proxied and
-# remain on the internal network.
+# Publishes only the BFF service — the single API gateway the frontend talks to. IAM, Ticket,
+# Flowable, and RabbitMQ AMQP are intentionally not proxied and remain on the internal network.
 
 :80 {
-	reverse_proxy demo_service:8000
+	# Outer ingress ceiling (defence in depth): Caddy rejects an oversized request body with 413
+	# before it reaches the application, which enforces its own tighter per-endpoint limit
+	# (CR-BFF-R6-HIGH-001).
+	request_body {
+		max_size 2MB
+	}
+	reverse_proxy bff_service:8000
 }

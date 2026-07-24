@@ -244,7 +244,7 @@ components:
     TokenResponse:
       type: object
       description: A signed access token and the claims it carries.
-      required: [accessToken, tokenType, expiresIn, subject, username, roles, permissions]
+      required: [accessToken, tokenType, expiresIn, subject, username, roles, permissions, teams]
       properties:
         accessToken: {type: string, description: The signed JWT access token.}
         tokenType: {type: string, enum: [Bearer], description: The token type (always Bearer).}
@@ -259,10 +259,14 @@ components:
           type: array
           items: {type: string}
           description: Permission claims resolved from the user's roles.
+        teams:
+          type: array
+          items: {type: string, format: uuid}
+          description: Identifiers of the teams the user belongs to.
     SubjectResponse:
       type: object
       description: The claims of the currently authenticated subject.
-      required: [subject, username, roles, permissions]
+      required: [subject, username, roles, permissions, teams]
       properties:
         subject: {type: string, format: uuid, description: The subject's identifier.}
         username: {type: string, description: The subject's login handle.}
@@ -274,6 +278,10 @@ components:
           type: array
           items: {type: string}
           description: The subject's resolved permission claims.
+        teams:
+          type: array
+          items: {type: string, format: uuid}
+          description: Identifiers of the teams the subject belongs to.
     CreateUserRequest:
       type: object
       additionalProperties: false

@@ -29,20 +29,31 @@ Base path `/api/v1`; camelCase; RFC 7807; `X-Correlation-ID`; optimistic locking
 `expectedVersion`; `Idempotency-Key` on create. Contract:
 `contracts/openapi/ticket-service.v1.yaml`.
 
-| Method | Path | Description | Auth |
+All ticket routes require a valid IAM-issued bearer token (verified independently, ADR-0008) plus the
+listed permission claim and data-scope access; 401 without a valid token (with `WWW-Authenticate:
+Bearer`), 403 without the permission or scope.
+
+| Method | Path | Description | Required permission |
 |---|---|---|---|
 | GET | `/health/live` | Liveness probe | none |
 | GET | `/health/ready` | Readiness probe (database connectivity) | none |
-| POST | `/api/v1/tickets` | Register an appeal (idempotent) | none (added in EP-1 IAM/BFF) |
-| GET | `/api/v1/tickets` | Search appeals (paginated) | none |
-| GET | `/api/v1/tickets/{id}` | Get an appeal card | none |
-| PATCH | `/api/v1/tickets/{id}` | Update card details | none |
-| POST | `/api/v1/tickets/{id}/classify` | Set classification | none |
-| POST | `/api/v1/tickets/{id}/decision` | Record the decision | none |
-| POST | `/api/v1/tickets/{id}/close` | Close (validated); sets retention/terminal status | none |
-| POST | `/api/v1/tickets/{id}/legal-hold` | Place or lift a legal hold | none |
-| POST | `/api/v1/tickets/{id}/comments` | Add a comment | none |
-| GET | `/api/v1/tickets/{id}/comments` | List comments | none |
+| POST | `/api/v1/tickets` | Register an appeal (idempotent) | `ticket:create` |
+| GET | `/api/v1/tickets` | Search appeals (paginated, scoped) | `ticket:read` |
+| GET | `/api/v1/tickets/{id}` | Get an appeal card | `ticket:read` |
+| PATCH | `/api/v1/tickets/{id}` | Update card details | `ticket:update` |
+| POST | `/api/v1/tickets/{id}/classify` | Set classification | `ticket:classify` |
+| POST | `/api/v1/tickets/{id}/decision` | Record the decision | `ticket:decide` |
+| POST | `/api/v1/tickets/{id}/close` | Close (validated); sets retention/terminal status | `ticket:close` |
+| POST | `/api/v1/tickets/{id}/legal-hold` | Place or lift a legal hold | `ticket:legal_hold` |
+| POST | `/api/v1/tickets/{id}/comments` | Add a comment | `ticket:comment` |
+| GET | `/api/v1/tickets/{id}/comments` | List comments | `ticket:read` |
+
+## Authentication and authorization
+
+Independent JWT verification (`infrastructure/auth_tokens.py`) + permission gate
+(`api/dependencies.require_permission`) + object/data scope (`domain/authorization.py`, fail-closed
+EP-1 policy per ADR-0008). The actor for mutations/audit is the verified subject (`registered_by`,
+`decision_by`, comment author) — never client input. No IAM code import or IAM DB access (ADR-004).
 
 ## Emitted events
 
@@ -99,4 +110,6 @@ outbox relay, migrations, and HTTP API integration.
 - SQLite for local runs and unit tests; PostgreSQL in the compose stack.
 - Draft dictionary codes pending the approved taxonomy (Q-A1).
 - Case-insensitive name search relies on PostgreSQL `ILIKE` (SQLite folds ASCII only).
-- No authentication yet (TASK_01D/01E); not wired into `docker-compose`.
+- The data-scope/confidentiality policy is a fail-closed EP-1 baseline (ADR-0008) pending the approved
+  business matrix; the JWT scheme is dev/local symmetric (corporate OIDC/asymmetric is TASK_06).
+- Wired into `docker-compose` (one-shot `ticket_migrate` + `ticket_service`, internal network only).

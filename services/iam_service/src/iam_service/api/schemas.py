@@ -61,6 +61,7 @@ class TokenResponse(ResponseModel):
         username: The authenticated user's login handle.
         roles: The user's granted roles.
         permissions: Permission claims resolved from the user's roles.
+        teams: Identifiers of the teams the user belongs to.
     """
 
     # Always set explicitly by the route (never defaulted) so the runtime schema marks it required,
@@ -72,6 +73,7 @@ class TokenResponse(ResponseModel):
     username: str
     roles: list[Role]
     permissions: list[str]
+    teams: list[uuid.UUID]
 
 
 class SubjectResponse(ResponseModel):
@@ -82,12 +84,14 @@ class SubjectResponse(ResponseModel):
         username: The subject's login handle.
         roles: The subject's granted roles.
         permissions: The subject's resolved permission claims.
+        teams: Identifiers of the teams the subject belongs to.
     """
 
     subject: uuid.UUID
     username: str
     roles: list[Role]
     permissions: list[str]
+    teams: list[uuid.UUID]
 
 
 class CreateUserRequest(RequestModel):

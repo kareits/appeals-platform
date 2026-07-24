@@ -47,23 +47,33 @@ class ProblemDetail:
 
 
 class ProblemDetailError(Exception):
-    """An exception carrying an RFC 7807 :class:`ProblemDetail`."""
+    """An exception carrying an RFC 7807 :class:`ProblemDetail` and optional response headers.
 
-    def __init__(self, problem: ProblemDetail) -> None:
+    Attributes:
+        problem: The problem details to render in the response body.
+        headers: Optional protocol headers to attach (for example, ``WWW-Authenticate`` on a 401).
+    """
+
+    def __init__(self, problem: ProblemDetail, headers: dict[str, str] | None = None) -> None:
         """Initialize the exception.
 
         Args:
             problem: The problem details to render in the response.
+            headers: Optional response headers to attach (for example, an authentication challenge).
         """
         super().__init__(problem.detail or problem.title)
         self.problem = problem
+        self.headers = headers
 
 
-def _problem_response(problem: ProblemDetail) -> JSONResponse:
+def _problem_response(
+    problem: ProblemDetail, headers: dict[str, str] | None = None
+) -> JSONResponse:
     """Build a Problem Details JSON response.
 
     Args:
         problem: The problem details to serialize.
+        headers: Optional response headers to attach.
 
     Returns:
         A JSON response with the Problem Details media type.
@@ -72,6 +82,7 @@ def _problem_response(problem: ProblemDetail) -> JSONResponse:
         problem.to_dict(),
         status_code=problem.status,
         media_type=PROBLEM_CONTENT_TYPE,
+        headers=headers,
     )
 
 
@@ -86,7 +97,7 @@ async def _handle_problem_detail(_: Request, exc: Exception) -> JSONResponse:
         A Problem Details JSON response.
     """
     assert isinstance(exc, ProblemDetailError)
-    return _problem_response(exc.problem)
+    return _problem_response(exc.problem, exc.headers)
 
 
 async def _handle_http_exception(_: Request, exc: Exception) -> JSONResponse:

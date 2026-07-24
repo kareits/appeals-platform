@@ -23,6 +23,9 @@ uv.lock.local
 .env.*
 !.env.example
 
+# Local code-review reports (kept out of version control)
+reviews/
+
 # OS / editor
 .DS_Store
 Thumbs.db

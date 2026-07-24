@@ -1,8 +1,13 @@
 """HTTP routes for the ticket API.
 
-Handlers are thin: they translate requests into command/query DTOs, invoke the application use
-cases, commit the unit of work, and map results (and domain errors) to responses. No business
-logic lives here (root ``CLAUDE.md``).
+Handlers are thin: they authenticate and authorize the caller, translate requests into command/query
+DTOs, invoke the application use cases, commit the unit of work, and map results (and domain errors)
+to responses. No business logic lives here (root ``CLAUDE.md``).
+
+Every route authenticates the bearer token independently (the ticket service is a security boundary
+in its own right, reachable directly without the BFF) and enforces a permission claim; object-level
+data scope is enforced inside the use cases. The actor for every mutation and audit record is the
+verified caller subject, never client input (CR-BFF-BLOCKER-001).
 """
 
 from __future__ import annotations
@@ -20,7 +25,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.exc import StaleDataError
 
-from ticket_service.api.dependencies import get_allocator, get_platform_timezone, get_session
+from ticket_service.api.dependencies import (
+    get_allocator,
+    get_platform_timezone,
+    get_session,
+    require_permission,
+)
 from ticket_service.api.schemas import (
     ApplicantModel,
     ClassifyRequest,
@@ -51,16 +61,39 @@ from ticket_service.application.commands import (
     UpdateTicketCommand,
 )
 from ticket_service.application.errors import (
+    AuthorizationError,
+    IdempotencyConflictError,
+    LegacyIdempotencyError,
     TicketNotFoundError,
     UnknownReferenceCodeError,
     VersionConflictError,
 )
+from ticket_service.domain.authorization import build_search_scope
 from ticket_service.domain.invariants import TicketInvariantError
+from ticket_service.domain.permissions import TicketPermission
+from ticket_service.infrastructure.auth_tokens import TicketClaims
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
 
 router = APIRouter(prefix="/api/v1", tags=["tickets"])
 
 _UPDATABLE_FIELDS = frozenset({"subject", "description", "source_channel_code", "contract_number"})
+
+# Authenticated-caller dependencies, one per required permission. Each verifies the bearer token
+# (401) and then checks the permission claim (403); object scope is enforced in the use cases.
+_RequireRead = Annotated[TicketClaims, Depends(require_permission(TicketPermission.READ.value))]
+_RequireCreate = Annotated[TicketClaims, Depends(require_permission(TicketPermission.CREATE.value))]
+_RequireUpdate = Annotated[TicketClaims, Depends(require_permission(TicketPermission.UPDATE.value))]
+_RequireClassify = Annotated[
+    TicketClaims, Depends(require_permission(TicketPermission.CLASSIFY.value))
+]
+_RequireDecide = Annotated[TicketClaims, Depends(require_permission(TicketPermission.DECIDE.value))]
+_RequireClose = Annotated[TicketClaims, Depends(require_permission(TicketPermission.CLOSE.value))]
+_RequireLegalHold = Annotated[
+    TicketClaims, Depends(require_permission(TicketPermission.LEGAL_HOLD.value))
+]
+_RequireComment = Annotated[
+    TicketClaims, Depends(require_permission(TicketPermission.COMMENT.value))
+]
 
 
 @asynccontextmanager
@@ -71,15 +104,25 @@ async def _domain_errors() -> AsyncIterator[None]:
         Control to the wrapped block; exceptions are converted to :class:`ProblemDetailError`.
 
     Raises:
-        ProblemDetailError: For not-found (404), version/integrity conflicts (409), and invariant
-            violations (422).
+        ProblemDetailError: For authorization (403), not-found (404), version/integrity conflicts
+            (409), and invariant violations (422).
     """
     try:
         yield
+    except AuthorizationError as exc:
+        raise _problem(403, "Forbidden", str(exc)) from exc
     except TicketNotFoundError as exc:
         raise _problem(404, "Ticket not found", str(exc)) from exc
     except VersionConflictError as exc:
         raise _problem(409, "Version conflict", str(exc)) from exc
+    except IdempotencyConflictError as exc:
+        raise _problem(409, "Idempotency conflict", str(exc)) from exc
+    except LegacyIdempotencyError as exc:
+        raise _problem(
+            409,
+            "Idempotency reconciliation required",
+            "this idempotency key predates per-caller scoping and cannot be safely replayed",
+        ) from exc
     except StaleDataError as exc:
         raise _problem(409, "Version conflict", "the ticket was modified concurrently") from exc
     except IntegrityError as exc:
@@ -137,6 +180,7 @@ async def create_manual_ticket(
     response: Response,
     session: Annotated[AsyncSession, Depends(get_session)],
     allocator: Annotated[RegistrationNumberAllocator, Depends(get_allocator)],
+    caller: _RequireCreate,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> TicketResponse:
     """Register an appeal manually.
@@ -146,6 +190,7 @@ async def create_manual_ticket(
         response: The response object, used to signal an idempotent hit with HTTP 200.
         session: The unit-of-work session.
         allocator: The registration-number allocator.
+        caller: The authenticated caller (requires ticket:create).
         idempotency_key: Optional key making the create retry-safe.
 
     Returns:
@@ -165,9 +210,10 @@ async def create_manual_ticket(
             _to_applicant_input(body.representative) if body.representative is not None else None
         ),
         idempotency_key=idempotency_key,
+        is_confidential=body.is_confidential,
     )
     async with _domain_errors():
-        ticket, created = await use_cases.create_manual_ticket(session, allocator, command)
+        ticket, created = await use_cases.create_manual_ticket(session, allocator, command, caller)
         await session.commit()
     if not created:
         response.status_code = 200
@@ -178,24 +224,27 @@ async def create_manual_ticket(
 async def get_ticket(
     ticket_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireRead,
 ) -> TicketResponse:
     """Return an appeal card by identifier.
 
     Args:
         ticket_id: The ticket identifier.
         session: The database session.
+        caller: The authenticated caller (requires ticket:read and data-scope access).
 
     Returns:
         The appeal card.
     """
     async with _domain_errors():
-        ticket = await use_cases.get_ticket(session, ticket_id)
+        ticket = await use_cases.get_ticket(session, ticket_id, caller)
     return ticket_to_response(ticket)
 
 
 @router.get("/tickets", response_model=PaginatedTickets, operation_id="searchTickets")
 async def search_tickets(
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireRead,
     registration_number: Annotated[str | None, Query(alias="registrationNumber")] = None,
     identifier_value: Annotated[str | None, Query(alias="identifierValue")] = None,
     full_name: Annotated[str | None, Query(alias="fullName")] = None,
@@ -214,10 +263,11 @@ async def search_tickets(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, alias="pageSize")] = 20,
 ) -> PaginatedTickets:
-    """Search appeals by the supported filters.
+    """Search appeals by the supported filters, constrained to the caller's read scope.
 
     Args:
         session: The database session.
+        caller: The authenticated caller (requires ticket:read; results are scoped to them).
         registration_number: Exact registration number.
         identifier_value: Exact national identifier of an attached party.
         full_name: Case-insensitive partial match on a party's full name.
@@ -237,7 +287,7 @@ async def search_tickets(
         page_size: Page size.
 
     Returns:
-        A page of matching appeals.
+        A page of matching appeals within the caller's scope.
     """
     query = TicketSearchQuery(
         registration_number=registration_number,
@@ -258,7 +308,10 @@ async def search_tickets(
         page=page,
         page_size=page_size,
     )
-    tickets, total = await use_cases.search_tickets(session, query)
+    scope = build_search_scope(
+        subject=caller.subject, role_names=caller.roles, team_claims=caller.teams
+    )
+    tickets, total = await use_cases.search_tickets(session, query, scope)
     return PaginatedTickets(
         items=[ticket_to_summary(t) for t in tickets],
         page=PageMeta(page=page, page_size=page_size, total=total),
@@ -272,6 +325,7 @@ async def update_ticket_details(
     ticket_id: uuid.UUID,
     body: UpdateTicketRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireUpdate,
 ) -> TicketResponse:
     """Update editable appeal-card details.
 
@@ -279,6 +333,7 @@ async def update_ticket_details(
         ticket_id: The ticket identifier.
         body: The partial update request.
         session: The unit-of-work session.
+        caller: The authenticated caller (requires ticket:update and data-scope access).
 
     Returns:
         The updated appeal card.
@@ -294,7 +349,7 @@ async def update_ticket_details(
         provided=provided,
     )
     async with _domain_errors():
-        ticket = await use_cases.update_ticket_details(session, command)
+        ticket = await use_cases.update_ticket_details(session, command, caller)
         await session.commit()
     return ticket_to_response(ticket)
 
@@ -306,6 +361,7 @@ async def classify_ticket(
     ticket_id: uuid.UUID,
     body: ClassifyRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireClassify,
 ) -> TicketResponse:
     """Set an appeal's classification.
 
@@ -313,6 +369,7 @@ async def classify_ticket(
         ticket_id: The ticket identifier.
         body: The classification request.
         session: The unit-of-work session.
+        caller: The authenticated caller (requires ticket:classify and data-scope access).
 
     Returns:
         The reclassified appeal card.
@@ -325,7 +382,7 @@ async def classify_ticket(
         priority_code=body.priority_code,
     )
     async with _domain_errors():
-        ticket = await use_cases.classify_ticket(session, command)
+        ticket = await use_cases.classify_ticket(session, command, caller)
         await session.commit()
     return ticket_to_response(ticket)
 
@@ -337,6 +394,7 @@ async def record_decision(
     ticket_id: uuid.UUID,
     body: RecordDecisionRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireDecide,
 ) -> TicketResponse:
     """Record the decision on an appeal.
 
@@ -344,6 +402,7 @@ async def record_decision(
         ticket_id: The ticket identifier.
         body: The decision request.
         session: The unit-of-work session.
+        caller: The authenticated caller (the deciding subject; requires ticket:decide).
 
     Returns:
         The appeal card with the recorded decision.
@@ -353,11 +412,10 @@ async def record_decision(
         expected_version=body.expected_version,
         decision_code=body.decision_code,
         decision_text=body.decision_text,
-        decision_by=body.decision_by,
         decision_summary=body.decision_summary,
     )
     async with _domain_errors():
-        ticket = await use_cases.record_decision(session, command)
+        ticket = await use_cases.record_decision(session, command, caller)
         await session.commit()
     return ticket_to_response(ticket)
 
@@ -369,6 +427,7 @@ async def close_ticket(
     ticket_id: uuid.UUID,
     body: CloseTicketRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireClose,
     timezone: Annotated[tzinfo, Depends(get_platform_timezone)],
 ) -> TicketResponse:
     """Close an appeal after validating the regulatory prerequisites.
@@ -377,6 +436,7 @@ async def close_ticket(
         ticket_id: The ticket identifier.
         body: The closure request.
         session: The unit-of-work session.
+        caller: The authenticated caller (the closing subject; requires ticket:close).
         timezone: The business timezone used for the retention date.
 
     Returns:
@@ -388,10 +448,9 @@ async def close_ticket(
         closure_reason_code=body.closure_reason_code,
         response_sent_at=body.response_sent_at,
         no_response_reason=body.no_response_reason,
-        actor_id=body.actor_id,
     )
     async with _domain_errors():
-        ticket = await use_cases.close_ticket(session, command, timezone)
+        ticket = await use_cases.close_ticket(session, command, caller, timezone)
         await session.commit()
     return ticket_to_response(ticket)
 
@@ -403,6 +462,7 @@ async def set_legal_hold(
     ticket_id: uuid.UUID,
     body: LegalHoldRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireLegalHold,
 ) -> TicketResponse:
     """Set or clear the legal hold on an appeal.
 
@@ -410,6 +470,7 @@ async def set_legal_hold(
         ticket_id: The ticket identifier.
         body: The legal-hold request.
         session: The unit-of-work session.
+        caller: The authenticated caller (the acting subject; requires ticket:legal_hold).
 
     Returns:
         The appeal card with the updated legal-hold flag.
@@ -419,10 +480,9 @@ async def set_legal_hold(
         expected_version=body.expected_version,
         legal_hold=body.legal_hold,
         reason=body.reason,
-        actor_id=body.actor_id,
     )
     async with _domain_errors():
-        ticket = await use_cases.set_legal_hold(session, command)
+        ticket = await use_cases.set_legal_hold(session, command, caller)
         await session.commit()
     return ticket_to_response(ticket)
 
@@ -437,6 +497,7 @@ async def add_comment(
     ticket_id: uuid.UUID,
     body: CommentRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireComment,
 ) -> CommentResponse:
     """Add a comment to an appeal.
 
@@ -444,13 +505,14 @@ async def add_comment(
         ticket_id: The ticket identifier.
         body: The comment request.
         session: The unit-of-work session.
+        caller: The authenticated caller (the comment author; requires ticket:comment).
 
     Returns:
         The created comment.
     """
-    command = AddCommentCommand(ticket_id=ticket_id, author_id=body.author_id, body=body.body)
+    command = AddCommentCommand(ticket_id=ticket_id, body=body.body)
     async with _domain_errors():
-        comment = await use_cases.add_comment(session, command)
+        comment = await use_cases.add_comment(session, command, caller)
         await session.commit()
     return comment_to_response(comment)
 
@@ -463,16 +525,18 @@ async def add_comment(
 async def list_comments(
     ticket_id: uuid.UUID,
     session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireRead,
 ) -> list[CommentResponse]:
     """List an appeal's comments, newest first.
 
     Args:
         ticket_id: The ticket identifier.
         session: The database session.
+        caller: The authenticated caller (requires ticket:read and data-scope access).
 
     Returns:
         The comments attached to the appeal.
     """
     async with _domain_errors():
-        comments = await use_cases.list_comments(session, ticket_id)
+        comments = await use_cases.list_comments(session, ticket_id, caller)
     return [comment_to_response(c) for c in comments]

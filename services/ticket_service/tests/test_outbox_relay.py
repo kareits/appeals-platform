@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ticket_service.application.commands import CreateTicketCommand
 from ticket_service.application.use_cases import create_manual_ticket
+from ticket_service.infrastructure.auth_tokens import TicketClaims
 from ticket_service.infrastructure.models import OutboxEvent
 from ticket_service.infrastructure.outbox import OutboxRelay
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
@@ -43,26 +44,29 @@ class CollectingPublisher:
 async def _seed_two_events(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    caller: TicketClaims,
 ) -> None:
     """Stage two ticket.created events by registering two tickets.
 
     Args:
         session_factory: The session factory.
         make_create_command: The command builder.
+        caller: The registering caller.
     """
     allocator = RegistrationNumberAllocator("AP")
     async with session_factory() as session:
-        await create_manual_ticket(session, allocator, make_create_command())
-        await create_manual_ticket(session, allocator, make_create_command())
+        await create_manual_ticket(session, allocator, make_create_command(), caller)
+        await create_manual_ticket(session, allocator, make_create_command(), caller)
         await session.commit()
 
 
 async def test_relay_publishes_and_marks_events(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """The relay publishes pending events and stamps them as published."""
-    await _seed_two_events(session_factory, make_create_command)
+    await _seed_two_events(session_factory, make_create_command, make_caller())
     publisher = CollectingPublisher()
     relay = OutboxRelay(session_factory, publisher)
 
@@ -78,9 +82,10 @@ async def test_relay_publishes_and_marks_events(
 async def test_relay_is_idempotent_across_passes(
     session_factory: async_sessionmaker[AsyncSession],
     make_create_command: Callable[..., CreateTicketCommand],
+    make_caller: Callable[..., TicketClaims],
 ) -> None:
     """A second pass publishes nothing because all events are already marked published."""
-    await _seed_two_events(session_factory, make_create_command)
+    await _seed_two_events(session_factory, make_create_command, make_caller())
     publisher = CollectingPublisher()
     relay = OutboxRelay(session_factory, publisher)
 

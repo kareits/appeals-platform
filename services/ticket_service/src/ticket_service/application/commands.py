@@ -62,6 +62,7 @@ class CreateTicketCommand:
         contract_number: Related credit-contract number, if any.
         representative: An optional representative party.
         idempotency_key: Optional client key making the registration retry-safe.
+        is_confidential: Whether to restrict the appeal to the confidential-access role subset.
     """
 
     received_at: datetime
@@ -75,6 +76,7 @@ class CreateTicketCommand:
     contract_number: str | None = None
     representative: ApplicantInput | None = None
     idempotency_key: str | None = None
+    is_confidential: bool = False
 
 
 @dataclass(frozen=True)
@@ -126,14 +128,15 @@ class ClassifyTicketCommand:
 class AddCommentCommand:
     """Input to add a comment to an appeal.
 
+    The author is not part of the command: it is derived server-side from the authenticated caller
+    (CR-BFF-BLOCKER-001 trusted actor), never from client input.
+
     Attributes:
         ticket_id: The ticket to comment on.
-        author_id: Identifier of the comment author.
         body: The comment text.
     """
 
     ticket_id: uuid.UUID
-    author_id: uuid.UUID
     body: str
 
 
@@ -146,7 +149,6 @@ class RecordDecisionCommand:
         expected_version: Version the client last observed (optimistic locking).
         decision_code: Decision code (dictionary ``decision``).
         decision_text: Full decision text.
-        decision_by: Identifier of the employee recording the decision.
         decision_summary: Optional short decision summary.
     """
 
@@ -154,7 +156,6 @@ class RecordDecisionCommand:
     expected_version: int
     decision_code: str
     decision_text: str
-    decision_by: uuid.UUID
     decision_summary: str | None = None
 
 
@@ -168,7 +169,6 @@ class CloseTicketCommand:
         closure_reason_code: Closure-reason code (dictionary ``closure_reason``).
         response_sent_at: When a response was sent, if any.
         no_response_reason: Justification when no response was sent.
-        actor_id: Identifier of the actor performing the closure, if known.
     """
 
     ticket_id: uuid.UUID
@@ -176,7 +176,6 @@ class CloseTicketCommand:
     closure_reason_code: str
     response_sent_at: datetime | None = None
     no_response_reason: str | None = None
-    actor_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -188,14 +187,12 @@ class SetLegalHoldCommand:
         expected_version: Version the client last observed (optimistic locking).
         legal_hold: The desired legal-hold state.
         reason: Optional reason recorded in the audit log.
-        actor_id: Identifier of the actor performing the change, if known.
     """
 
     ticket_id: uuid.UUID
     expected_version: int
     legal_hold: bool
     reason: str | None = None
-    actor_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)

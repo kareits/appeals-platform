@@ -25,12 +25,15 @@ class TokenClaims:
         username: The user's login handle.
         roles: The role names granted to the user.
         permissions: The permission strings resolved from those roles.
+        teams: The identifiers of the teams the user belongs to (used by downstream services for
+            team/data-scope enforcement).
     """
 
     subject: uuid.UUID
     username: str
     roles: tuple[str, ...]
     permissions: tuple[str, ...]
+    teams: tuple[str, ...]
 
 
 class TokenError(Exception):
@@ -80,14 +83,16 @@ class TokenIssuer:
         username: str,
         roles: list[str],
         permissions: list[str],
+        teams: list[str],
     ) -> tuple[str, int]:
-        """Issue a signed access token carrying the subject's roles and permissions.
+        """Issue a signed access token carrying the subject's roles, permissions, and teams.
 
         Args:
             subject: The user's internal identifier.
             username: The user's login handle.
             roles: The role names granted to the user.
             permissions: The permission strings resolved from those roles.
+            teams: The identifiers of the teams the user belongs to.
 
         Returns:
             A tuple of the encoded token and its lifetime in seconds.
@@ -100,6 +105,7 @@ class TokenIssuer:
             "username": username,
             "roles": roles,
             "permissions": permissions,
+            "teams": teams,
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=self.ttl_seconds)).timestamp()),
         }
@@ -140,9 +146,11 @@ class TokenIssuer:
             raise TokenError("token has an invalid username claim")
         roles = _string_array(payload.get("roles", []), "roles")
         permissions = _string_array(payload.get("permissions", []), "permissions")
+        teams = _string_array(payload.get("teams", []), "teams")
         return TokenClaims(
             subject=subject,
             username=username,
             roles=roles,
             permissions=permissions,
+            teams=teams,
         )

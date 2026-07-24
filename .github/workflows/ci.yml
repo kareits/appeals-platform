@@ -76,8 +76,48 @@ jobs:
           IAM_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/iam_service
         run: uv run pytest services/iam_service/tests/test_iam_migration_postgres.py -v
 
+  ticket-postgres-idempotency:
+    name: Ticket PostgreSQL concurrency and migration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          # A dedicated disposable database; the destructive-test guard requires a *_test name.
+          POSTGRES_DB: ticket_service_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.30"
+          enable-cache: true
+
+      - name: Sync workspace
+        run: uv sync --all-packages --dev
+
+      - name: Run ticket PostgreSQL concurrency and populated-migration tests
+        env:
+          # Opt in explicitly and target only the disposable *_test database.
+          ALLOW_DESTRUCTIVE_DATABASE_TESTS: "1"
+          TICKET_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ticket_service_test
+        run: >-
+          uv run pytest
+          services/ticket_service/tests/test_idempotency_postgres.py
+          services/ticket_service/tests/test_migration_postgres.py
+          -v
+
   compose-smoke:
-    name: Compose smoke test
+    name: Compose smoke test (authenticated E2E)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +129,64 @@ jobs:
         run: |
           curl -fsS http://localhost:8080/health/live
           curl -fsS http://localhost:8080/health/ready
+
+      - name: Authenticated BFF E2E (login, create, workspace, role negatives)
+        run: python infrastructure/smoke/bff_e2e_smoke.py http://localhost:8080
+
+      - name: Direct Ticket call must be denied (no gateway bypass)
+        run: |
+          # Reach the internal Ticket Service directly from another container on the compose network;
+          # it must reject an unauthenticated request with 401 even though it has no host port.
+          code=$(docker run --rm --network appeals-platform_backend curlimages/curl:8.10.1 \
+            -s -o /dev/null -w "%{http_code}" \
+            "http://ticket_service:8000/api/v1/tickets/00000000-0000-4000-8000-000000000000")
+          echo "direct ticket status: $code"
+          test "$code" = "401"
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f infrastructure/docker-compose.yml down -v
+
+  compose-upgrade:
+    name: Compose existing-volume upgrade
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start only PostgreSQL (fresh volume)
+        run: docker compose -f infrastructure/docker-compose.yml up -d --wait --wait-timeout 120 postgres
+
+      - name: Simulate a pre-upgrade volume (drop the newer service roles/databases)
+        run: |
+          docker compose -f infrastructure/docker-compose.yml exec -T postgres \
+            psql -v ON_ERROR_STOP=1 -U postgres -d postgres -c \
+            "DROP DATABASE IF EXISTS ticket_service; DROP DATABASE IF EXISTS bff_service; \
+             DROP ROLE IF EXISTS ticket; DROP ROLE IF EXISTS bff;"
+
+      - name: Bring up the full stack on the existing volume
+        run: docker compose -f infrastructure/docker-compose.yml up --build -d --wait --wait-timeout 300
+
+      - name: Health through the reverse proxy (upgrade succeeded without volume recreation)
+        run: |
+          curl -fsS http://localhost:8080/health/live
+          curl -fsS http://localhost:8080/health/ready
+
+      - name: Authenticated E2E after upgrade (not only health)
+        run: python infrastructure/smoke/bff_e2e_smoke.py http://localhost:8080
+
+      - name: Rotate to a URI-reserved-character password and re-provision on the retained volume
+        env:
+          # Contains ':', '@', '/', '?', '#' — reserved in a connection URL; the service builds the
+          # URL from discrete parts with percent-encoding, so this must still connect.
+          TICKET_DB_PASSWORD: "rot@ted:p/a?ss#9f3a"
+        run: |
+          # Provisioning must reconcile the existing role's password (not no-op), and the service
+          # must authenticate with the rotated special-character secret without recreating the volume.
+          docker compose -f infrastructure/docker-compose.yml up -d --wait --wait-timeout 300
+          curl -fsS http://localhost:8080/health/ready
+
+      - name: Authenticated E2E after special-character password rotation
+        run: python infrastructure/smoke/bff_e2e_smoke.py http://localhost:8080
 
       - name: Stop the stack
         if: always()

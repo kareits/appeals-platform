@@ -10,11 +10,12 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import ColumnElement, Select, func, select
+from sqlalchemy import ColumnElement, Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ticket_service.application.commands import TicketSearchQuery
+from ticket_service.domain.authorization import SearchScope
 from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
 
 
@@ -67,16 +68,19 @@ class TicketRepository:
         )
         return result.scalar_one_or_none()
 
-    async def search(self, query: TicketSearchQuery) -> tuple[Sequence[Ticket], int]:
-        """Search tickets by the supported filters, returning a page and the total count.
+    async def search(
+        self, query: TicketSearchQuery, scope: SearchScope
+    ) -> tuple[Sequence[Ticket], int]:
+        """Search tickets by the supported filters, constrained to the caller's read scope.
 
         Args:
             query: The search filters and pagination.
+            scope: The caller's read scope (team/ownership/confidentiality), ANDed with the filters.
 
         Returns:
             A tuple of the page's tickets (newest registration first) and the total match count.
         """
-        conditions = self._build_conditions(query)
+        conditions = self._build_conditions(query) + self._scope_conditions(scope)
 
         total = await self._session.scalar(
             select(func.count()).select_from(Ticket).where(*conditions)
@@ -92,6 +96,32 @@ class TicketRepository:
         )
         rows = (await self._session.execute(page_stmt)).scalars().all()
         return rows, int(total or 0)
+
+    def _scope_conditions(self, scope: SearchScope) -> list[ColumnElement[bool]]:
+        """Translate the caller's read scope into SQLAlchemy filter expressions.
+
+        A caller without cross-team access sees only tickets in one of their teams, assigned to
+        them, or registered by them. Callers not cleared for confidential tickets never see them.
+        These conditions are ANDed with the user-supplied filters, so scope can only narrow results.
+
+        Args:
+            scope: The caller's read scope.
+
+        Returns:
+            A list of boolean SQL expressions enforcing the scope.
+        """
+        conditions: list[ColumnElement[bool]] = []
+        if not scope.all_access:
+            reachable: list[ColumnElement[bool]] = [
+                Ticket.current_assignee_id == scope.subject,
+                Ticket.registered_by == scope.subject,
+            ]
+            if scope.team_ids:
+                reachable.append(Ticket.current_team_id.in_(scope.team_ids))
+            conditions.append(or_(*reachable))
+        if not scope.include_confidential:
+            conditions.append(Ticket.is_confidential.is_(False))
+        return conditions
 
     def _build_conditions(self, query: TicketSearchQuery) -> list[ColumnElement[bool]]:
         """Translate a search query into SQLAlchemy filter expressions.
