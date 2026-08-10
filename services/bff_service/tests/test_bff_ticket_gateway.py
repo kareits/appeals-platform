@@ -79,6 +79,36 @@ async def test_search_forwards_query_parameters(build_client: ClientFactory) -> 
     assert capture["query"] == {"statusCode": "NEW", "pageSize": "10"}
 
 
+async def test_reference_data_forwards_query_and_relays(build_client: ClientFactory) -> None:
+    """Reference data forwards the types filter to the Ticket Service and relays its response."""
+    capture: dict[str, Any] = {}
+    client = await build_client(
+        iam_handler=auth_me_handler(("ticket:read",)),
+        ticket_handler=_capturing_handler(capture, status=200),
+    )
+    response = await client.get(
+        "/api/v1/reference-data?types=product,priority",
+        headers={"Authorization": "Bearer good"},
+    )
+    assert response.status_code == 200
+    assert capture["method"] == "GET"
+    assert capture["path"] == "/api/v1/reference-data"
+    assert capture["query"] == {"types": "product,priority"}
+
+
+async def test_reference_data_denied_without_read_permission(build_client: ClientFactory) -> None:
+    """A caller lacking ticket:read cannot read reference data; the gateway rejects it with 403."""
+    capture: dict[str, Any] = {}
+    client = await build_client(
+        iam_handler=auth_me_handler(("iam:manage",)),
+        ticket_handler=_capturing_handler(capture, status=200),
+    )
+    response = await client.get("/api/v1/reference-data", headers={"Authorization": "Bearer good"})
+    assert response.status_code == 403
+    # The gateway short-circuits before ever calling the Ticket Service.
+    assert capture == {}
+
+
 async def test_create_denied_without_permission(build_client: ClientFactory) -> None:
     """A read-only caller cannot register an appeal; the gateway rejects it with 403."""
     capture: dict[str, Any] = {}

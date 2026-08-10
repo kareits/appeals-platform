@@ -60,6 +60,7 @@ _PROXY_OPERATIONS = [
     ("post", "/tickets/{ticketId}/close", "ticket", "post", "/tickets/{ticketId}/close"),
     ("post", "/tickets/{ticketId}/legal-hold", "ticket", "post", "/tickets/{ticketId}/legal-hold"),
     ("post", "/tickets/{ticketId}/comments", "ticket", "post", "/tickets/{ticketId}/comments"),
+    ("get", "/reference-data", "ticket", "get", "/reference-data"),
 ]
 
 

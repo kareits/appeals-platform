@@ -2,17 +2,19 @@
 
 The web frontend of the MFO Appeals Platform: a React + TypeScript single-page application. It is
 the operator UI and talks only to the BFF gateway over the same-origin `/api/v1` surface. Delivered
-incrementally across the EP-1 frontend subtasks; this milestone (TASK_01E-2) covers dev-login and
-the appeal list with search/filter.
+incrementally across the EP-1 frontend subtasks; through TASK_01E-3 it covers dev-login, the appeal
+list with search/filter, and manual appeal registration.
 
-## Scope (TASK_01E-2)
+## Scope (TASK_01E-2, TASK_01E-3)
 
 - Dev/local login (`POST /api/v1/auth/login` via the BFF) and session handling.
 - Appeal list with search and filters (`GET /api/v1/tickets` via the BFF), with pagination.
+- Manual appeal registration (`POST /api/v1/tickets` via the BFF) with client-side validation of
+  required fields, nullable demographic (conditional) fields, and reference-code selects populated
+  from `GET /api/v1/reference-data` (TASK_01E-3).
 - UI text in the localization layer (Russian and Kazakh), per ADR-015.
 
-Manual registration (01E-3) and the appeal card with comments/decision/close (01E-4) are added in
-later subtasks.
+The appeal card with comments/decision/close (01E-4) is added in a later subtask.
 
 ## Tech stack
 
@@ -32,7 +34,8 @@ src/
   components/   Shared UI (app shell, language switcher).
   features/
     login/      Login page.
-    tickets/    Appeal list, search form, results table, and the search hook.
+    tickets/    Appeal list, search form, results table, the manual-registration form/page, and the
+                search/reference-data/create hooks.
   i18n/         i18next setup and the ru/kk dictionaries.
   lib/          Small formatting helpers.
   routing/      The authentication route guard.

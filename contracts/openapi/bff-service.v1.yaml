@@ -535,6 +535,49 @@ paths:
           $ref: '#/components/responses/Problem'
         '504':
           $ref: '#/components/responses/Problem'
+  /reference-data:
+    get:
+      tags: [tickets]
+      operationId: listReferenceData
+      summary: List active reference-dictionary entries.
+      description: >-
+        Requires the ticket:read permission. Forwards the request to the Ticket Service and relays
+        the active reference-dictionary entries (channel, product, classifier, priority, and so on)
+        used to populate form controls. The response projected here matches ticket-service.v1.yaml
+        exactly.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: types
+          in: query
+          required: false
+          schema: {type: string}
+          description: >-
+            Optional comma-separated dictionary types to include (for example,
+            "product,classifier,priority,channel"). When omitted, all active entries are returned.
+      responses:
+        '200':
+          description: The active reference-dictionary entries (relayed from the Ticket Service).
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferenceDataResponse'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '502':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+        '504':
+          $ref: '#/components/responses/Problem'
 components:
   securitySchemes:
     bearerAuth:
@@ -883,3 +926,21 @@ components:
         authorId: {type: string, format: uuid}
         body: {type: string}
         createdAt: {type: string, format: date-time}
+    ReferenceEntry:
+      type: object
+      description: A single active reference-dictionary entry used to populate form controls.
+      required: [dictionaryType, code, displayNameRu, sortOrder]
+      properties:
+        dictionaryType: {type: string, description: The dictionary this entry belongs to (such as product).}
+        code: {type: string, description: Stable code stored on the ticket.}
+        displayNameRu: {type: string, description: Russian display label (business content).}
+        displayNameKk: {type: [string, "null"], description: Kazakh display label (business content) when defined.}
+        sortOrder: {type: integer, description: Presentation ordering hint within the dictionary.}
+    ReferenceDataResponse:
+      type: object
+      description: The active reference-dictionary entries, ordered by type, sort order, then code.
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items: {$ref: '#/components/schemas/ReferenceEntry'}

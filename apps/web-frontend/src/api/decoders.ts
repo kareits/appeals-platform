@@ -16,7 +16,10 @@ import type {
   PageMeta,
   PaginatedTickets,
   ProblemDetails,
+  ReferenceDataResponse,
+  ReferenceEntry,
   Role,
+  TicketResponse,
   TicketSummary,
   TokenResponse,
 } from "./types";
@@ -209,6 +212,28 @@ function requireInteger(source: Record<string, unknown>, key: string, context: s
   const value = source[key];
   if (typeof value !== "number" || !Number.isInteger(value)) {
     throw new ProtocolError(`${context}.${key}: expected an integer`);
+  }
+  return value;
+}
+
+/**
+ * Require a boolean field.
+ *
+ * Args:
+ *   source: The parent object.
+ *   key: The field name.
+ *   context: A short label used in the error message.
+ *
+ * Returns:
+ *   The boolean value.
+ *
+ * Raises:
+ *   ProtocolError: When the field is missing or not a boolean.
+ */
+function requireBoolean(source: Record<string, unknown>, key: string, context: string): boolean {
+  const value = source[key];
+  if (typeof value !== "boolean") {
+    throw new ProtocolError(`${context}.${key}: expected a boolean`);
   }
   return value;
 }
@@ -510,6 +535,81 @@ export function decodePaginatedTickets(raw: unknown): PaginatedTickets {
   return {
     items: items.map(decodeTicketSummary),
     page: decodePageMeta(obj.page),
+  };
+}
+
+/**
+ * Validate a single reference-dictionary entry (BFF `ReferenceEntry`).
+ *
+ * Args:
+ *   raw: The parsed JSON item.
+ *
+ * Returns:
+ *   The validated reference entry.
+ *
+ * Raises:
+ *   ProtocolError: When the item does not match the contract.
+ */
+export function decodeReferenceEntry(raw: unknown): ReferenceEntry {
+  const obj = asObject(raw, "ReferenceEntry");
+  return {
+    dictionaryType: requireString(obj, "dictionaryType", "ReferenceEntry"),
+    code: requireString(obj, "code", "ReferenceEntry"),
+    displayNameRu: requireString(obj, "displayNameRu", "ReferenceEntry"),
+    displayNameKk: nullableString(obj, "displayNameKk", "ReferenceEntry"),
+    sortOrder: requireInteger(obj, "sortOrder", "ReferenceEntry"),
+  };
+}
+
+/**
+ * Validate the reference-data response envelope (BFF `ReferenceDataResponse`).
+ *
+ * Args:
+ *   raw: The parsed JSON body.
+ *
+ * Returns:
+ *   The validated reference-data response.
+ *
+ * Raises:
+ *   ProtocolError: When the envelope or any entry does not match the contract.
+ */
+export function decodeReferenceData(raw: unknown): ReferenceDataResponse {
+  const obj = asObject(raw, "ReferenceDataResponse");
+  const entries = obj.entries;
+  if (!Array.isArray(entries)) {
+    throw new ProtocolError("ReferenceDataResponse.entries: expected an array");
+  }
+  return { entries: entries.map(decodeReferenceEntry) };
+}
+
+/**
+ * Validate the appeal card returned after registration (BFF `TicketResponse`).
+ *
+ * Only the fields this frontend consumes to confirm a registration are validated; the full card is
+ * decoded when the card view is built (01E-4).
+ *
+ * Args:
+ *   raw: The parsed JSON body.
+ *
+ * Returns:
+ *   The validated appeal card (subset).
+ *
+ * Raises:
+ *   ProtocolError: When the body does not match the contract.
+ */
+export function decodeTicketResponse(raw: unknown): TicketResponse {
+  const obj = asObject(raw, "TicketResponse");
+  return {
+    id: requireUuid(obj, "id", "TicketResponse"),
+    registrationNumber: requireString(obj, "registrationNumber", "TicketResponse"),
+    subject: requireString(obj, "subject", "TicketResponse"),
+    productCode: requireString(obj, "productCode", "TicketResponse"),
+    classifierCode: requireString(obj, "classifierCode", "TicketResponse"),
+    priorityCode: requireString(obj, "priorityCode", "TicketResponse"),
+    currentStatusCode: requireString(obj, "currentStatusCode", "TicketResponse"),
+    currentStageCode: requireString(obj, "currentStageCode", "TicketResponse"),
+    isConfidential: requireBoolean(obj, "isConfidential", "TicketResponse"),
+    version: requireInteger(obj, "version", "TicketResponse"),
   };
 }
 

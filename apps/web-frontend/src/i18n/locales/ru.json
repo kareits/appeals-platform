@@ -56,6 +56,63 @@
     "error": "Не удалось загрузить обращения.",
     "forbidden": "Недостаточно прав для просмотра обращений."
   },
+  "register": {
+    "title": "Регистрация обращения",
+    "newAppeal": "Зарегистрировать обращение",
+    "required": "Обязательное поле",
+    "selectPlaceholder": "— выберите —",
+    "submit": "Зарегистрировать",
+    "submitting": "Регистрация…",
+    "cancel": "Отмена",
+    "backToList": "К списку обращений",
+    "success": "Обращение зарегистрировано. Регистрационный номер: {{number}}",
+    "forbidden": "Недостаточно прав для регистрации обращений.",
+    "referenceError": "Не удалось загрузить справочники. Повторите попытку.",
+    "section": {
+      "main": "Обращение",
+      "applicant": "Заявитель",
+      "representative": "Представитель"
+    },
+    "field": {
+      "receivedAt": "Дата поступления",
+      "sourceChannelCode": "Канал поступления",
+      "subject": "Тема",
+      "description": "Текст обращения",
+      "productCode": "Продукт",
+      "classifierCode": "Классификатор",
+      "priorityCode": "Приоритет",
+      "contractNumber": "Номер договора",
+      "isConfidential": "Конфиденциальное обращение",
+      "dataSource": "Источник данных",
+      "fullName": "ФИО",
+      "identifierType": "Тип идентификатора",
+      "identifierValue": "ИИН / БИН",
+      "email": "Электронная почта",
+      "phone": "Телефон",
+      "genderCode": "Пол",
+      "birthDate": "Дата рождения",
+      "age": "Возраст",
+      "regionCode": "Регион",
+      "representativeBasis": "Основание представительства",
+      "includeRepresentative": "Добавить представителя"
+    },
+    "dataSource": {
+      "MANUAL": "Ручной ввод",
+      "APPEAL": "Из обращения",
+      "CORE_SYSTEM": "Из основной системы"
+    },
+    "identifierType": {
+      "none": "— не указан —",
+      "IIN": "ИИН",
+      "BIN": "БИН"
+    },
+    "error": {
+      "required": "Обязательное поле.",
+      "invalidAge": "Возраст должен быть целым числом от 0 до 150.",
+      "invalidReceivedAt": "Некорректная дата поступления.",
+      "identifierPair": "Укажите и тип, и значение идентификатора, либо оставьте оба поля пустыми."
+    }
+  },
   "pagination": {
     "summary": "Страница {{page}} — всего {{total}}",
     "prev": "Назад",

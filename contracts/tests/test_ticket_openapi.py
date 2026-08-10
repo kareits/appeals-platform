@@ -49,4 +49,5 @@ def test_expected_operations_present() -> None:
         "setLegalHold",
         "addComment",
         "listComments",
+        "listReferenceData",
     } <= operation_ids

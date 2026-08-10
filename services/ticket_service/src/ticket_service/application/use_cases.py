@@ -49,7 +49,12 @@ from ticket_service.domain.sla import DEFAULT_SLA_POLICY, compute_due_dates
 from ticket_service.infrastructure import audit, reference_data
 from ticket_service.infrastructure.audit import AuditRepository
 from ticket_service.infrastructure.auth_tokens import TicketClaims
-from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
+from ticket_service.infrastructure.models import (
+    DictionaryEntry,
+    Ticket,
+    TicketApplicant,
+    TicketComment,
+)
 from ticket_service.infrastructure.outbox import OutboxRepository
 from ticket_service.infrastructure.reference_data import ReferenceDataRepository
 from ticket_service.infrastructure.registration import RegistrationNumberAllocator
@@ -678,6 +683,21 @@ async def search_tickets(
         A tuple of the page's tickets and the total match count.
     """
     return await TicketRepository(session).search(query, scope)
+
+
+async def list_reference_data(
+    session: AsyncSession, types: Sequence[str] | None = None
+) -> Sequence[DictionaryEntry]:
+    """List active reference-dictionary entries used to populate registration/classification forms.
+
+    Args:
+        session: The active session.
+        types: Optional dictionary types to include; when ``None`` or empty, all types are returned.
+
+    Returns:
+        The active entries in a deterministic presentation order (type, sort order, code).
+    """
+    return await ReferenceDataRepository(session).list_active(types)
 
 
 async def _load_for_write(

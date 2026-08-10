@@ -126,6 +126,39 @@ async def test_comments_roundtrip(client: AsyncClient) -> None:
     assert comments[0]["body"] == "Note"
 
 
+async def test_reference_data_lists_active_entries(client: AsyncClient) -> None:
+    """Reference data returns active entries ordered by type, then sort order, then code."""
+    response = await client.get("/api/v1/reference-data")
+
+    assert response.status_code == 200
+    entries = response.json()["entries"]
+    assert entries, "expected seeded reference entries"
+    # Every entry carries the contracted shape.
+    first = entries[0]
+    assert {"dictionaryType", "code", "displayNameRu", "displayNameKk", "sortOrder"} <= set(first)
+    # A known product code is present with its Russian business label.
+    products = {e["code"]: e for e in entries if e["dictionaryType"] == "product"}
+    assert products["MICROLOAN"]["displayNameRu"] == "Микрокредит"
+    # Ordering is deterministic: grouped by type, then ascending sort order within a type.
+    product_orders = [e["sortOrder"] for e in entries if e["dictionaryType"] == "product"]
+    assert product_orders == sorted(product_orders)
+
+
+async def test_reference_data_filters_by_types(client: AsyncClient) -> None:
+    """The types filter restricts the response to the requested dictionaries."""
+    response = await client.get("/api/v1/reference-data", params={"types": "product,priority"})
+
+    assert response.status_code == 200
+    returned_types = {e["dictionaryType"] for e in response.json()["entries"]}
+    assert returned_types == {"product", "priority"}
+
+
+async def test_reference_data_requires_authentication(unauth_client: AsyncClient) -> None:
+    """Reference data requires a bearer token like every other ticket route."""
+    response = await unauth_client.get("/api/v1/reference-data")
+    assert response.status_code == 401
+
+
 async def test_idempotent_create_returns_200_on_replay(client: AsyncClient) -> None:
     """Repeating a create with the same Idempotency-Key returns the original with HTTP 200."""
     headers = {"Idempotency-Key": "abc-123"}

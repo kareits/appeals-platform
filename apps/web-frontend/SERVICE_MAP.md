@@ -5,10 +5,10 @@ Structured map of the web frontend. Kept current as behavior changes (Definition
 
 ## Responsibility
 
-The operator-facing single-page application (React + TypeScript). It renders login and the appeal
-list/search UI and talks exclusively to the BFF gateway over the same-origin `/api/v1` surface. It
-holds no business logic and no direct access to Flowable, databases, or the filesystem
-(architectural prohibition, root `CLAUDE.md`).
+The operator-facing single-page application (React + TypeScript). It renders login, the appeal
+list/search UI, and the manual appeal-registration form, and talks exclusively to the BFF gateway
+over the same-origin `/api/v1` surface. It holds no business logic and no direct access to Flowable,
+databases, or the filesystem (architectural prohibition, root `CLAUDE.md`).
 
 ## Owned data
 
@@ -17,10 +17,12 @@ None. The only client-side state is the current session (access token and resolv
 
 ## Consumed API (BFF gateway)
 
-| Method | Path                 | Used for                                        |
-| ------ | -------------------- | ----------------------------------------------- |
-| POST   | `/api/v1/auth/login` | Dev/local login → access token and claims.      |
-| GET    | `/api/v1/tickets`    | Appeal search/list with filters and pagination. |
+| Method | Path                     | Used for                                          |
+| ------ | ------------------------ | ------------------------------------------------- |
+| POST   | `/api/v1/auth/login`     | Dev/local login → access token and claims.        |
+| GET    | `/api/v1/tickets`        | Appeal search/list with filters and pagination.   |
+| POST   | `/api/v1/tickets`        | Manual appeal registration (`ticket:create`).     |
+| GET    | `/api/v1/reference-data` | Reference-code selects for the registration form. |
 
 Transport types are a hand-maintained projection of `contracts/openapi/bff-service.v1.yaml`
 (`src/api/types.ts`); update them when the BFF contract changes. Later subtasks consume more of the

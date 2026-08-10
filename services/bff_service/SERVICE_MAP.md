@@ -37,6 +37,7 @@ on upstream drift.
 | POST | `/api/v1/tickets/{ticketId}/close` | Close appeal | `ticket:close` |
 | POST | `/api/v1/tickets/{ticketId}/legal-hold` | Set/clear legal hold | `ticket:legal_hold` |
 | POST | `/api/v1/tickets/{ticketId}/comments` | Add comment | `ticket:comment` |
+| GET | `/api/v1/reference-data` | List reference-dictionary entries (relays Ticket) | `ticket:read` |
 | GET | `/health/live` | Liveness | none |
 | GET | `/health/ready` | Readiness (own database) | none |
 

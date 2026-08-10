@@ -202,6 +202,37 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
   text is unaffected.
 - **Status:** accepted. **Full ADR:** yes — [`docs/adr/ADR-0003-vendor-neutral-code-naming.md`](adr/ADR-0003-vendor-neutral-code-naming.md).
 
+## ADR-017. Corporate OIDC federation (Keycloak + Active Directory)
+
+- **Decision:** the production identity provider is **Keycloak 26.0.8**, realm `KZ`, OIDC over
+  **RS256**, federating **Active Directory** via LDAP (confirmed by IT, 2026-08-10). In production,
+  the root of trust becomes a verified Keycloak identity: **IAM verifies** Keycloak's signed token
+  against the realm JWKS (issuer `https://keycloak.solva.kz/realms/KZ`, audience = the registered
+  client) instead of issuing the HS256 dev token. Under the **public-SPA topology** the consumption
+  paths are unchanged — the BFF keeps using IAM `/auth/me` (ADR-0007) and the Ticket Service keeps
+  verifying its received token independently (ADR-0008); the recommended **confidential-BFF topology**
+  instead requires revising ADR-0007/0009 (see ADR-0010). The claim shape
+  (`roles`/`permissions`/`teams`) and the IAM authorization matrix (ADR-0006) are unchanged; users
+  are keyed by AD `objectGUID` in a new nullable `iam_user.external_subject`. The flow uses
+  Authorization Code + PKCE (`S256`). Client Credentials is not currently used, so service-to-service
+  stays on the internal scheme.
+- **Rationale:** the corporate IdP is now defined (ADR-012's fake is replaceable). Making a
+  **verified** Keycloak identity the root of trust matches docs/06; how the IAM-resolved claims reach
+  the token the Ticket Service independently verifies is a TASK_06 choice (recommended: an IAM-issued
+  short-lived internal platform token, minted only after IAM verifies the Keycloak token — never a
+  re-issued corporate access token). `objectGUID` is the stable identity key across
+  rename/refederation. Preserving the claim shape keeps the consumption paths (BFF `/auth/me`, Ticket
+  independent verification) and the frontend unchanged **under the public-SPA topology**; the
+  confidential-BFF topology requires revising both ADR-0007 (BFF becomes an OIDC client with a
+  session contract) and ADR-0009 (auth state leaves `sessionStorage`).
+- **Consequences:** TASK_06 implements the RS256/JWKS verification path (selected by environment
+  alongside the existing HS256 dev path), the `external_subject` column + backfill, the Keycloak
+  client registration (via admins), and the flow topology (public SPA+PKCE vs confidential BFF —
+  recommendation: confidential BFF). Dev-auth (ADR-0006) remains local/dev/CI only and is removed
+  for shared/production; the seeded admin/known secret (CR-IAM-HIGH-002) stays open until then.
+  Service-to-service keeps the internal scheme until a Client Credentials client exists.
+- **Status:** proposed (target for TASK_06). **Full ADR:** yes — [`docs/adr/ADR-0010-corporate-oidc-federation.md`](adr/ADR-0010-corporate-oidc-federation.md).
+
 ---
 
 ## ADRs to prepare at implementation time
@@ -220,4 +251,4 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
 | ADR-STORAGE-MIGRATION | Dual-read and file migration to GridFS | TASK_03B | Pending |
-| ADR-AUTH-OIDC | Transition dev-auth → corporate OIDC | TASK_06 | Pending |
+| ADR-0010 (corporate-oidc-federation) — was `ADR-AUTH-OIDC` | Keycloak/AD OIDC, RS256/JWKS verification, `objectGUID`→`external_subject`, claim shape preserved (see ADR-017) | TASK_06 | Written (proposed) |

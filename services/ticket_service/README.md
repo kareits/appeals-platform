@@ -47,6 +47,7 @@ Base path `/api/v1`; JSON camelCase; RFC 7807 errors; `X-Correlation-ID`; optimi
 | POST | `/tickets/{id}/close` | Close after validating prerequisites; sets retention and terminal status. |
 | POST | `/tickets/{id}/legal-hold` | Place or lift a legal hold. |
 | POST/GET | `/tickets/{id}/comments` | Add/list comments. |
+| GET | `/reference-data` | List active reference-dictionary entries (optional `types` filter) for form controls. |
 
 Status, stage, and assignment are Flowable projections and are **not** editable through this API
 (they change only via the projection mechanism; a placeholder in EP-1).

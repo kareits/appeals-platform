@@ -71,6 +71,7 @@ a shared domain-model library.
 | POST | `/api/v1/tickets/{ticketId}/close` | Close the appeal | `ticket:close` |
 | POST | `/api/v1/tickets/{ticketId}/legal-hold` | Set/clear legal hold | `ticket:legal_hold` |
 | POST | `/api/v1/tickets/{ticketId}/comments` | Add a comment | `ticket:comment` |
+| GET | `/api/v1/reference-data` | List reference-dictionary entries (relays Ticket) | `ticket:read` |
 | GET | `/health/live` | Liveness probe | none |
 | GET | `/health/ready` | Readiness probe (own database) | none |
 

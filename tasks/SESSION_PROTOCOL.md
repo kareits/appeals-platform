@@ -62,7 +62,32 @@ Where behavior or boundaries changed: service `README.md` and `SERVICE_MAP.md`, 
 descriptions, architecture docs, and a new ADR under `docs/adr/` for significant decisions. Every
 new/modified module, class, function, and method has an English Google-style docstring.
 
-## 7. Report and commit
+## 7. Prepare the code-review prompt
+
+Before requesting review (and before any commit), prepare an independent code-review context package
+using the shared template in [`reviews/UNIVERSAL_CODE_REVIEW_AGENT_PROMPT.md`](../reviews/UNIVERSAL_CODE_REVIEW_AGENT_PROMPT.md).
+This step is mandatory for every implementation task. Fill in **every** field of that template's
+context block from the repository — never substitute an unknown value with an invented fact:
+
+- Task ID and title; the statement path(s) (`tasks/DETAILED_TASK_INDEX.md`, the current EP section of
+  `docs/IMPLEMENTATION_PLAN.md`, `docs/CONTEXT_LOADING_GUIDE.md`).
+- The developer report. When no report file exists, write it to `reviews/DEV_REPORT_<TASK_ID>.md`
+  (acceptance-criteria mapping, changes by component, design decisions to scrutinize, exact gate
+  results, what was not run, uncommitted state, and carried-over cross-task open findings).
+- The previous relevant review section in `reviews/CODE_REVIEW_REPORT.md` (or `NONE` for a first
+  pass), including any carried-over open cross-task findings that must not be treated as closed.
+- Branch, base/expected HEAD, and whether the change is committed.
+- The reviewer's allowed change scope (`NONE`, or only `reviews/CODE_REVIEW_REPORT.md` — append a new
+  numbered section, do not rewrite earlier ones).
+- Environment constraints (uv invoked as `python -m uv …` or via the repo `.venv`; Compose E2E only
+  when infrastructure/migrations/env changed; pre-existing unrelated working-tree changes the
+  reviewer must not touch).
+
+These review artifacts are English technical documents (ADR-015). `reviews/` is git-ignored, so the
+report and any prompt files stay local. Deliver the filled context block to the user so it can be
+handed to a review agent in a fresh session.
+
+## 8. Report and commit
 
 Report the outcome against the Definition of Done (root `CLAUDE.md`, items 1–12) in Russian,
 faithfully (including anything skipped or failing). **Commit only when the user asks**; if on the

@@ -9,7 +9,7 @@ checked.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,3 +61,32 @@ class ReferenceDataRepository:
         invalid = [pair for pair in wanted if pair not in found]
         if invalid:
             raise UnknownReferenceCodeError(invalid)
+
+    async def list_active(self, types: Sequence[str] | None = None) -> Sequence[DictionaryEntry]:
+        """List active dictionary entries, optionally restricted to specific dictionary types.
+
+        Entries are ordered by dictionary type, then presentation ``sort_order``, then ``code`` so
+        callers (for example, the registration form) can render stable, grouped selects. Only active
+        entries are returned; deactivated codes stay valid for existing records but are not offered
+        for new input.
+
+        Args:
+            types: Optional dictionary types to include; when ``None`` or empty, all types are
+                returned.
+
+        Returns:
+            The matching active entries in a deterministic presentation order.
+        """
+        stmt = (
+            select(DictionaryEntry)
+            .where(DictionaryEntry.is_active.is_(True))
+            .order_by(
+                DictionaryEntry.dictionary_type,
+                DictionaryEntry.sort_order,
+                DictionaryEntry.code,
+            )
+        )
+        if types:
+            stmt = stmt.where(DictionaryEntry.dictionary_type.in_(list(dict.fromkeys(types))))
+        result = await self._session.execute(stmt)
+        return result.scalars().all()

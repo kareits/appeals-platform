@@ -99,7 +99,9 @@ ignore-private = false
 ignore-semiprivate = false
 ignore-property-decorators = false
 ignore-setters = false
-exclude = ["chatgpt_docs", ".venv", "**/build", "**/dist"]
+# node_modules holds third-party vendored code (some packages ship .py files, e.g. flatted); it is
+# not maintained project code and is excluded from the docstring gate (root CLAUDE.md exclusions).
+exclude = ["chatgpt_docs", ".venv", "**/build", "**/dist", "**/node_modules"]
 
 # --- pytest ---
 [tool.pytest.ini_options]

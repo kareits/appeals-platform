@@ -8,6 +8,8 @@ import {
   decodePageMeta,
   decodePaginatedTickets,
   decodeProblem,
+  decodeReferenceData,
+  decodeTicketResponse,
   decodeTicketSummary,
   decodeTokenResponse,
 } from "./decoders";
@@ -236,5 +238,105 @@ describe("decodeProblem", () => {
     expect(decodeProblem({ foo: "bar" })).toBeNull();
     expect(decodeProblem("not json")).toBeNull();
     expect(decodeProblem(null)).toBeNull();
+  });
+});
+
+function validReferenceEntry(
+  overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    dictionaryType: "product",
+    code: "MICROLOAN",
+    displayNameRu: "Микрокредит",
+    displayNameKk: null,
+    sortOrder: 10,
+    ...overrides,
+  };
+}
+
+describe("decodeReferenceData", () => {
+  it("accepts a valid reference-data envelope", () => {
+    const result = decodeReferenceData({ entries: [validReferenceEntry()] });
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]!.code).toBe("MICROLOAN");
+  });
+
+  it("accepts a Kazakh display label when present", () => {
+    const result = decodeReferenceData({
+      entries: [validReferenceEntry({ displayNameKk: "Микрокредит" })],
+    });
+    expect(result.entries[0]!.displayNameKk).toBe("Микрокредит");
+  });
+
+  it("rejects entries that are not an array", () => {
+    expect(() => decodeReferenceData({ entries: {} })).toThrow(ProtocolError);
+  });
+
+  it("rejects a missing required entry field", () => {
+    const bad = validReferenceEntry();
+    delete bad.displayNameRu;
+    expect(() => decodeReferenceData({ entries: [bad] })).toThrow(ProtocolError);
+  });
+
+  it("rejects a non-integer sort order", () => {
+    expect(() =>
+      decodeReferenceData({ entries: [validReferenceEntry({ sortOrder: 1.5 })] }),
+    ).toThrow(ProtocolError);
+  });
+
+  it("rejects a wrong-typed Kazakh label", () => {
+    expect(() =>
+      decodeReferenceData({ entries: [validReferenceEntry({ displayNameKk: 42 })] }),
+    ).toThrow(ProtocolError);
+  });
+});
+
+function validTicketResponse(
+  overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    id: UUID_B,
+    registrationNumber: "AP-2026-000001",
+    subject: "subject",
+    productCode: "MICROLOAN",
+    classifierCode: "COMPLAINT",
+    priorityCode: "NORMAL",
+    currentStatusCode: "NEW",
+    currentStageCode: "REGISTRATION",
+    isConfidential: false,
+    version: 1,
+    ...overrides,
+  };
+}
+
+describe("decodeTicketResponse", () => {
+  it("accepts a valid card", () => {
+    const result = decodeTicketResponse(validTicketResponse());
+    expect(result.registrationNumber).toBe("AP-2026-000001");
+    expect(result.version).toBe(1);
+  });
+
+  it("rejects a non-UUID id", () => {
+    expect(() => decodeTicketResponse(validTicketResponse({ id: "ticket-1" }))).toThrow(
+      ProtocolError,
+    );
+  });
+
+  it("rejects a non-boolean confidentiality flag", () => {
+    expect(() => decodeTicketResponse(validTicketResponse({ isConfidential: "false" }))).toThrow(
+      ProtocolError,
+    );
+  });
+
+  it("rejects a non-integer version", () => {
+    expect(() => decodeTicketResponse(validTicketResponse({ version: "1" }))).toThrow(
+      ProtocolError,
+    );
+  });
+
+  it("rejects a missing required field", () => {
+    const bad = validTicketResponse();
+    delete bad.registrationNumber;
+    expect(() => decodeTicketResponse(bad)).toThrow(ProtocolError);
   });
 });

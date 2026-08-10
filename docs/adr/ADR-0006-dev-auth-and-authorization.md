@@ -1,8 +1,11 @@
 # ADR-0006: Dev/local authentication and the authorization matrix
 
-- **Status:** Accepted
-- **Related:** DECISION_LOG ADR-AUTH-OIDC (dev-auth → corporate OIDC, TASK_06); ADR-007
-  (shared-library boundaries); docs/06 (security, authorization, audit); IAM_SERVICE spec
+- **Status:** Accepted (production authentication to be superseded by ADR-0010 once it is accepted
+  and implemented at TASK_06; the dev/local scheme and the authorization matrix below remain in
+  force)
+- **Related:** ADR-0010 (corporate OIDC federation — the concrete ADR-AUTH-OIDC, dev-auth →
+  corporate OIDC at TASK_06); ADR-007 (shared-library boundaries); docs/06 (security, authorization,
+  audit); IAM_SERVICE spec
 
 ## Context
 
@@ -64,3 +67,15 @@ shared permission-rule library — each service must enforce authorization indep
   signing, and removes the insecure default secret and dev seed accounts.
 - Changing the seed users/roles or regenerating their password hashes requires a **new** migration,
   never an edit to `0002` (immutable-snapshot rule).
+- **Production federation (ADR-0010).** The corporate IdP is now confirmed (Keycloak 26.0.8, realm
+  `KZ`, OIDC over RS256, AD via LDAP federation — see
+  [ADR-0010](ADR-0010-corporate-oidc-federation.md)). In production the root of trust becomes a
+  verified Keycloak identity: **IAM** verifies Keycloak's RS256 token against the realm JWKS instead
+  of issuing the HS256 dev token, while the **claim shape** (`roles`/`permissions`/`teams`) and the
+  **authorization matrix** in this ADR are unchanged. Under the **public-SPA topology** the
+  consumption paths are unchanged too — the BFF keeps using IAM `/auth/me` (ADR-0007) and the Ticket
+  Service keeps verifying its received token independently (ADR-0008); the recommended
+  **confidential-BFF topology** instead requires revising ADR-0007/0009 (see ADR-0010). Users are
+  keyed by AD `objectGUID` (a new nullable `iam_user.external_subject`). The dev/local scheme in this
+  ADR stays the runtime for `local`/`dev`/`test` and is removed for shared/production deployments at
+  TASK_06.

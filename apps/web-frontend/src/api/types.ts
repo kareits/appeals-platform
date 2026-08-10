@@ -91,6 +91,101 @@ export interface TicketSearchFilters {
   pageSize?: number;
 }
 
+/** Party role on an appeal (BFF `ApplicantInput.applicantType`). */
+export type ApplicantType = "CONSUMER" | "REPRESENTATIVE";
+
+/** National-identifier kind (BFF `ApplicantInput.identifierType`). */
+export type IdentifierType = "IIN" | "BIN";
+
+/** Provenance of a party's data (BFF `ApplicantInput.dataSource`). */
+export type DataSource = "APPEAL" | "CORE_SYSTEM" | "MANUAL";
+
+/**
+ * A party attached to an appeal on registration (BFF `ApplicantInput`).
+ *
+ * All demographic fields are optional and must never block registration (docs/01); only
+ * `applicantType` and `dataSource` are required by the contract.
+ */
+export interface ApplicantInput {
+  applicantType: ApplicantType;
+  dataSource: DataSource;
+  fullName?: string | null;
+  identifierType?: IdentifierType | null;
+  identifierValue?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  genderCode?: string | null;
+  birthDate?: string | null;
+  age?: number | null;
+  regionCode?: string | null;
+  representativeBasis?: string | null;
+}
+
+/** Request body for `POST /api/v1/tickets` (BFF `CreateTicketRequest`). */
+export interface CreateTicketRequest {
+  receivedAt: string;
+  sourceChannelCode: string;
+  subject: string;
+  description: string;
+  productCode: string;
+  classifierCode: string;
+  priorityCode: string;
+  contractNumber?: string | null;
+  applicant: ApplicantInput;
+  representative?: ApplicantInput | null;
+  isConfidential?: boolean;
+}
+
+/** A party as returned on the appeal card; the national identifier is masked (BFF `ApplicantResponse`). */
+export interface ApplicantResponse {
+  id: string;
+  applicantType: ApplicantType;
+  fullName: string | null;
+  identifierType: IdentifierType | null;
+  identifierMasked: string | null;
+  email: string | null;
+  phone: string | null;
+  genderCode: string | null;
+  birthDate: string | null;
+  age: number | null;
+  regionCode: string | null;
+  dataSource: DataSource;
+  representativeBasis: string | null;
+}
+
+/**
+ * The appeal card returned after registration (BFF `TicketResponse`).
+ *
+ * This frontend uses only the fields relevant to confirming a registration (identity, registration
+ * number, version); the remaining card fields are added when the card view is built (01E-4).
+ */
+export interface TicketResponse {
+  id: string;
+  registrationNumber: string;
+  subject: string;
+  productCode: string;
+  classifierCode: string;
+  priorityCode: string;
+  currentStatusCode: string;
+  currentStageCode: string;
+  isConfidential: boolean;
+  version: number;
+}
+
+/** A single active reference-dictionary entry (BFF `ReferenceEntry`). */
+export interface ReferenceEntry {
+  dictionaryType: string;
+  code: string;
+  displayNameRu: string;
+  displayNameKk: string | null;
+  sortOrder: number;
+}
+
+/** The active reference-dictionary entries (BFF `ReferenceDataResponse`). */
+export interface ReferenceDataResponse {
+  entries: ReferenceEntry[];
+}
+
 /** RFC 7807 Problem Details as served by the gateway (BFF `Problem`). */
 export interface ProblemDetails {
   type?: string;

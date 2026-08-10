@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from mfo_http import CorrelationIdMiddleware, PlatformHttpClient, install_problem_detail_handlers
 from mfo_observability import configure_logging
 
-from bff_service.api import auth, health, tickets
+from bff_service.api import auth, health, reference, tickets
 from bff_service.config import Settings, get_settings
 from bff_service.infrastructure.db import create_engine, create_session_factory
 from bff_service.openapi import committed_openapi
@@ -83,6 +83,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(tickets.router)
+    app.include_router(reference.router)
 
     def _committed_openapi() -> dict[str, Any]:
         """Serve the committed contract verbatim as the runtime OpenAPI document.

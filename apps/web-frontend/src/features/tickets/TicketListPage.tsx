@@ -11,6 +11,8 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../auth/context";
 import { ApiError } from "../../api/errors";
 import { errorCorrelationId, errorMessageKey, retryAfterSeconds } from "../../api/errorMessages";
 import { EMPTY_FORM_VALUES, toFilters, type TicketSearchFormValues } from "./searchValues";
@@ -42,6 +44,7 @@ function isAuthError(error: unknown): boolean {
  */
 export function TicketListPage(): React.JSX.Element {
   const { t } = useTranslation();
+  const { hasPermission } = useAuth();
   const [applied, setApplied] = useState<TicketSearchFormValues>(EMPTY_FORM_VALUES);
   const [page, setPage] = useState(1);
 
@@ -76,7 +79,14 @@ export function TicketListPage(): React.JSX.Element {
 
   return (
     <section className="ticket-list-page">
-      <h2>{t("tickets.title")}</h2>
+      <div className="ticket-list-page__header">
+        <h2>{t("tickets.title")}</h2>
+        {hasPermission("ticket:create") ? (
+          <Link className="button-link" to="/tickets/new">
+            {t("register.newAppeal")}
+          </Link>
+        ) : null}
+      </div>
 
       <TicketSearchForm onApply={onApply} />
 

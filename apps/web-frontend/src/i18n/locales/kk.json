@@ -56,6 +56,63 @@
     "error": "Өтініштерді жүктеу мүмкін болмады.",
     "forbidden": "Өтініштерді көру үшін құқық жеткіліксіз."
   },
+  "register": {
+    "title": "Өтінішті тіркеу",
+    "newAppeal": "Өтінішті тіркеу",
+    "required": "Міндетті өріс",
+    "selectPlaceholder": "— таңдаңыз —",
+    "submit": "Тіркеу",
+    "submitting": "Тіркелуде…",
+    "cancel": "Болдырмау",
+    "backToList": "Өтініштер тізіміне",
+    "success": "Өтініш тіркелді. Тіркеу нөмірі: {{number}}",
+    "forbidden": "Өтініштерді тіркеуге құқық жеткіліксіз.",
+    "referenceError": "Анықтамалықтарды жүктеу мүмкін болмады. Қайталап көріңіз.",
+    "section": {
+      "main": "Өтініш",
+      "applicant": "Өтініш беруші",
+      "representative": "Өкіл"
+    },
+    "field": {
+      "receivedAt": "Түскен күні",
+      "sourceChannelCode": "Түсу арнасы",
+      "subject": "Тақырып",
+      "description": "Өтініш мәтіні",
+      "productCode": "Өнім",
+      "classifierCode": "Жіктеуіш",
+      "priorityCode": "Басымдық",
+      "contractNumber": "Шарт нөмірі",
+      "isConfidential": "Құпия өтініш",
+      "dataSource": "Деректер көзі",
+      "fullName": "Аты-жөні",
+      "identifierType": "Идентификатор түрі",
+      "identifierValue": "ЖСН / БСН",
+      "email": "Электрондық пошта",
+      "phone": "Телефон",
+      "genderCode": "Жынысы",
+      "birthDate": "Туған күні",
+      "age": "Жасы",
+      "regionCode": "Өңір",
+      "representativeBasis": "Өкілдік негізі",
+      "includeRepresentative": "Өкіл қосу"
+    },
+    "dataSource": {
+      "MANUAL": "Қолмен енгізу",
+      "APPEAL": "Өтініштен",
+      "CORE_SYSTEM": "Негізгі жүйеден"
+    },
+    "identifierType": {
+      "none": "— көрсетілмеген —",
+      "IIN": "ЖСН",
+      "BIN": "БСН"
+    },
+    "error": {
+      "required": "Міндетті өріс.",
+      "invalidAge": "Жасы 0-ден 150-ге дейінгі бүтін сан болуы керек.",
+      "invalidReceivedAt": "Түскен күні қате.",
+      "identifierPair": "Идентификатордың түрі мен мәнін де көрсетіңіз немесе екеуін де бос қалдырыңыз."
+    }
+  },
   "pagination": {
     "summary": "{{page}}-бет — барлығы {{total}}",
     "prev": "Артқа",

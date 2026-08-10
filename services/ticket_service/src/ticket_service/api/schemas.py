@@ -22,7 +22,12 @@ from pydantic.alias_generators import to_camel
 
 from ticket_service.domain.enums import ApplicantType, DataSource, IdentifierType
 from ticket_service.infrastructure.masking import mask_identifier
-from ticket_service.infrastructure.models import Ticket, TicketApplicant, TicketComment
+from ticket_service.infrastructure.models import (
+    DictionaryEntry,
+    Ticket,
+    TicketApplicant,
+    TicketComment,
+)
 
 # Bounded input types aligned with the database column limits, so oversized/blank input is rejected
 # with 422 by Pydantic instead of failing only in PostgreSQL (CR-MEDIUM-002). ``CodeStr`` matches a
@@ -402,6 +407,52 @@ class CommentResponse(ResponseModel):
     author_id: uuid.UUID
     body: str
     created_at: datetime
+
+
+class ReferenceEntry(ResponseModel):
+    """A single active reference-dictionary entry used to populate form controls.
+
+    Attributes:
+        dictionary_type: The dictionary this entry belongs to (for example, ``product``).
+        code: The stable code stored on the ticket.
+        display_name_ru: Russian display label (business content).
+        display_name_kk: Kazakh display label (business content), if defined.
+        sort_order: Presentation ordering hint within the dictionary.
+    """
+
+    dictionary_type: str
+    code: str
+    display_name_ru: str
+    display_name_kk: str | None
+    sort_order: int
+
+
+class ReferenceDataResponse(ResponseModel):
+    """The active reference-dictionary entries returned to a client.
+
+    Attributes:
+        entries: The active entries, ordered by dictionary type, sort order, then code.
+    """
+
+    entries: list[ReferenceEntry]
+
+
+def reference_entry_to_response(entry: DictionaryEntry) -> ReferenceEntry:
+    """Map a dictionary-entry row to its reference-entry response model.
+
+    Args:
+        entry: The stored dictionary entry.
+
+    Returns:
+        The reference-entry response model.
+    """
+    return ReferenceEntry(
+        dictionary_type=entry.dictionary_type,
+        code=entry.code,
+        display_name_ru=entry.display_name_ru,
+        display_name_kk=entry.display_name_kk,
+        sort_order=entry.sort_order,
+    )
 
 
 def applicant_to_response(applicant: TicketApplicant) -> ApplicantResponse:

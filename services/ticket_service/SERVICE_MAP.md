@@ -47,6 +47,7 @@ Bearer`), 403 without the permission or scope.
 | POST | `/api/v1/tickets/{id}/legal-hold` | Place or lift a legal hold | `ticket:legal_hold` |
 | POST | `/api/v1/tickets/{id}/comments` | Add a comment | `ticket:comment` |
 | GET | `/api/v1/tickets/{id}/comments` | List comments | `ticket:read` |
+| GET | `/api/v1/reference-data` | List active reference-dictionary entries (optional `types` filter) | `ticket:read` |
 
 ## Authentication and authorization
 

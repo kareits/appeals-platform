@@ -105,6 +105,68 @@ describe("BFF contract parity", () => {
   it("exposes the operations the frontend calls", () => {
     expect(contract.paths["/auth/login"]?.post).toBeDefined();
     expect(contract.paths["/tickets"]?.get).toBeDefined();
+    // Registration (01E-3) and reference-data lookups the frontend also calls.
+    expect(contract.paths["/tickets"]?.post).toBeDefined();
+    expect(contract.paths["/reference-data"]?.get).toBeDefined();
+  });
+
+  it("requires the CreateTicketRequest fields the registration form sends", () => {
+    const required = new Set(schemas.CreateTicketRequest!.required);
+    for (const field of [
+      "receivedAt",
+      "sourceChannelCode",
+      "subject",
+      "description",
+      "productCode",
+      "classifierCode",
+      "priorityCode",
+      "applicant",
+    ]) {
+      expect(required.has(field), `CreateTicketRequest must require ${field}`).toBe(true);
+    }
+    // The party the form always sends needs only its role and provenance.
+    const applicantRequired = new Set(schemas.ApplicantInput!.required);
+    for (const field of ["applicantType", "dataSource"]) {
+      expect(applicantRequired.has(field), `ApplicantInput must require ${field}`).toBe(true);
+    }
+  });
+
+  it("matches the TicketResponse fields the create decoder enforces", () => {
+    const ticket = schemas.TicketResponse!;
+    const required = new Set(ticket.required);
+    for (const field of [
+      "id",
+      "registrationNumber",
+      "subject",
+      "productCode",
+      "classifierCode",
+      "priorityCode",
+      "currentStatusCode",
+      "currentStageCode",
+      "isConfidential",
+      "version",
+    ]) {
+      expect(required.has(field), `TicketResponse must require ${field}`).toBe(true);
+    }
+    expectProp(ticket, "id", { type: "string", nullable: false, format: "uuid" });
+    expectProp(ticket, "registrationNumber", { type: "string", nullable: false });
+    expectProp(ticket, "isConfidential", { type: "boolean", nullable: false });
+    expectProp(ticket, "version", { type: "integer", nullable: false });
+  });
+
+  it("matches the ReferenceEntry field types and nullability the decoder enforces", () => {
+    expect(new Set(schemas.ReferenceDataResponse!.required)).toEqual(new Set(["entries"]));
+    expect(schemas.ReferenceDataResponse!.properties?.entries?.type).toBe("array");
+
+    const entry = schemas.ReferenceEntry!;
+    expect(new Set(entry.required)).toEqual(
+      new Set(["dictionaryType", "code", "displayNameRu", "sortOrder"]),
+    );
+    expectProp(entry, "dictionaryType", { type: "string", nullable: false });
+    expectProp(entry, "code", { type: "string", nullable: false });
+    expectProp(entry, "displayNameRu", { type: "string", nullable: false });
+    expectProp(entry, "displayNameKk", { type: "string", nullable: true });
+    expectProp(entry, "sortOrder", { type: "integer", nullable: false });
   });
 
   it("accepts every ticket query filter the frontend sends", () => {

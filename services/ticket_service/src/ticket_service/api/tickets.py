@@ -42,9 +42,11 @@ from ticket_service.api.schemas import (
     PageMeta,
     PaginatedTickets,
     RecordDecisionRequest,
+    ReferenceDataResponse,
     TicketResponse,
     UpdateTicketRequest,
     comment_to_response,
+    reference_entry_to_response,
     ticket_to_response,
     ticket_to_summary,
 )
@@ -316,6 +318,32 @@ async def search_tickets(
         items=[ticket_to_summary(t) for t in tickets],
         page=PageMeta(page=page, page_size=page_size, total=total),
     )
+
+
+@router.get(
+    "/reference-data", response_model=ReferenceDataResponse, operation_id="listReferenceData"
+)
+async def list_reference_data(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireRead,
+    types: Annotated[str | None, Query()] = None,
+) -> ReferenceDataResponse:
+    """List active reference-dictionary entries used to populate form controls.
+
+    Args:
+        session: The database session.
+        caller: The authenticated caller (requires ticket:read).
+        types: Optional comma-separated dictionary types to include; when omitted, all active
+            entries are returned. Blank items are ignored.
+
+    Returns:
+        The active reference entries, ordered by dictionary type, sort order, then code.
+    """
+    selected = (
+        [part.strip() for part in types.split(",") if part.strip()] if types is not None else None
+    )
+    entries = await use_cases.list_reference_data(session, selected)
+    return ReferenceDataResponse(entries=[reference_entry_to_response(e) for e in entries])
 
 
 @router.patch(
