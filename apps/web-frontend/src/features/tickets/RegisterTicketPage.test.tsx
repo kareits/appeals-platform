@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RegisterTicketPage } from "./RegisterTicketPage";
-import { renderWithProviders, stubFetch } from "../../test/utils";
+import { makeTicketCard, renderWithProviders, stubFetch } from "../../test/utils";
 import type { Session } from "../../auth/session";
 import type { CreateTicketRequest, ReferenceDataResponse, TicketResponse } from "../../api/types";
 
@@ -72,18 +72,7 @@ const REFERENCE_DATA: ReferenceDataResponse = {
 };
 
 /** A canned created-appeal card returned by the gateway. */
-const CREATED: TicketResponse = {
-  id: "00000000-0000-0000-0000-0000000000cc",
-  registrationNumber: "AP-2026-000123",
-  subject: "Restructuring request",
-  productCode: "MICROLOAN",
-  classifierCode: "RESTRUCTURING",
-  priorityCode: "NORMAL",
-  currentStatusCode: "NEW",
-  currentStageCode: "REGISTRATION",
-  isConfidential: false,
-  version: 1,
-};
+const CREATED: TicketResponse = makeTicketCard();
 
 afterEach(() => {
   vi.unstubAllGlobals();

@@ -13,6 +13,7 @@ import type {
   DataSource,
   IdentifierType,
 } from "../../api/types";
+import { localDateTimeToIsoInstant } from "../../lib/dateTime";
 
 /** The string/boolean values held for one party (consumer or representative). */
 export interface ApplicantFormValues {
@@ -124,77 +125,6 @@ function isValidAge(value: string): boolean {
   return Number.isInteger(age) && age >= 0 && age <= 150;
 }
 
-/** A `datetime-local` value with captured components (`yyyy-mm-ddThh:mm`, seconds optional). */
-const LOCAL_DATE_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
-
-/**
- * Number of days in a given month, honouring leap years.
- *
- * Args:
- *   year: The four-digit year.
- *   month: The 1-based month (1-12).
- *
- * Returns:
- *   The number of days in the month.
- */
-function daysInMonth(year: number, month: number): number {
-  // Date.UTC treats the month as 0-based; day 0 of the 1-based month yields that month's last day.
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-/**
- * Convert a `datetime-local` value (local wall-clock) to an ISO-8601 UTC instant.
- *
- * A calendar-impossible value is rejected rather than accepted: `new Date("2026-02-30T09:00")` does
- * not fail — JavaScript silently rolls it over to 2026-03-02 — so parsing via `Date` alone would
- * register a different received date than the operator entered. The components are validated against
- * the real calendar (month, day-in-month with leap years, and time ranges) before a `Date` is built.
- *
- * Args:
- *   value: The `yyyy-mm-ddThh:mm` (seconds optional) input value.
- *
- * Returns:
- *   The ISO-8601 UTC timestamp, or null when the value is blank or not a real instant.
- */
-function toReceivedAtInstant(value: string): string | null {
-  const trimmed = value.trim();
-  if (trimmed === "") {
-    return null;
-  }
-  const match = LOCAL_DATE_TIME_RE.exec(trimmed);
-  if (!match) {
-    return null;
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = match[6] === undefined ? 0 : Number(match[6]);
-  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
-    return null;
-  }
-  if (hour > 23 || minute > 59 || second > 59) {
-    return null;
-  }
-  const instant = new Date(year, month - 1, day, hour, minute, second);
-  // Round-trip guard against the values JavaScript's Date silently shifts rather than rejects:
-  // two-digit years mapped into 1900-1999 (0099 -> 1999), and local wall-clock times that do not
-  // exist on a DST spring-forward boundary (rolled forward one hour). If any component fails to
-  // round-trip, the instant that would be sent is not the one the operator entered, so reject it.
-  if (
-    instant.getFullYear() !== year ||
-    instant.getMonth() !== month - 1 ||
-    instant.getDate() !== day ||
-    instant.getHours() !== hour ||
-    instant.getMinutes() !== minute ||
-    instant.getSeconds() !== second
-  ) {
-    return null;
-  }
-  return instant.toISOString();
-}
-
 /**
  * Validate one party's optional fields, collecting errors under a field-path prefix.
  *
@@ -271,7 +201,7 @@ export function buildCreateRequest(values: RegisterFormValues): {
       errors[field] = "required";
     }
   }
-  const receivedAt = toReceivedAtInstant(values.receivedAt);
+  const receivedAt = localDateTimeToIsoInstant(values.receivedAt);
   if (values.receivedAt.trim() !== "" && receivedAt === null) {
     errors.receivedAt = "invalidReceivedAt";
   }

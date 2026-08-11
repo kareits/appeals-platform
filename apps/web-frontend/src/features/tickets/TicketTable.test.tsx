@@ -3,9 +3,16 @@
  */
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
 import "../../i18n";
 import { TicketTable } from "./TicketTable";
 import type { TicketSummary } from "../../api/types";
+
+/** Render an element inside a router so `<Link>` has the context it needs. */
+function renderRouted(ui: ReactElement): ReturnType<typeof render> {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 function summary(overrides: Partial<TicketSummary> = {}): TicketSummary {
   return {
@@ -28,14 +35,14 @@ function summary(overrides: Partial<TicketSummary> = {}): TicketSummary {
 
 describe("TicketTable", () => {
   it("renders appeal fields", () => {
-    render(<TicketTable items={[summary()]} />);
+    renderRouted(<TicketTable items={[summary()]} />);
     expect(screen.getByText("AP-2026-000001")).toBeInTheDocument();
     expect(screen.getByText("subject")).toBeInTheDocument();
   });
 
   it("renders an injection payload as inert text, not markup", () => {
     const payload = '<img src=x onerror="window.__xss=1"><script>window.__xss=1</script>';
-    render(<TicketTable items={[summary({ subject: payload })]} />);
+    renderRouted(<TicketTable items={[summary({ subject: payload })]} />);
 
     // The payload is shown verbatim as text (React escapes it).
     expect(screen.getByText(payload)).toBeInTheDocument();

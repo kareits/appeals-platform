@@ -113,6 +113,110 @@
       "identifierPair": "Укажите и тип, и значение идентификатора, либо оставьте оба поля пустыми."
     }
   },
+  "card": {
+    "title": "Обращение {{number}}",
+    "backToList": "К списку обращений",
+    "loading": "Загрузка обращения…",
+    "forbidden": "Недостаточно прав для просмотра обращения.",
+    "referenceError": "Не удалось загрузить справочники — коды показаны без расшифровки.",
+    "required": "Обязательное поле",
+    "selectPlaceholder": "— выберите —",
+    "flag": { "yes": "Да", "no": "Нет" },
+    "section": {
+      "details": "Данные обращения",
+      "applicants": "Стороны",
+      "decision": "Решение",
+      "closure": "Закрытие"
+    },
+    "applicantType": {
+      "CONSUMER": "Заявитель",
+      "REPRESENTATIVE": "Представитель"
+    },
+    "field": {
+      "status": "Статус",
+      "stage": "Этап",
+      "sourceChannelCode": "Канал поступления",
+      "productCode": "Продукт",
+      "classifierCode": "Классификатор",
+      "priorityCode": "Приоритет",
+      "contractNumber": "Номер договора",
+      "receivedAt": "Поступило",
+      "registeredAt": "Зарегистрировано",
+      "internalDueAt": "Внутренний срок",
+      "legalDueAt": "Регуляторный срок",
+      "isConfidential": "Конфиденциальное",
+      "legalHold": "Юридическая блокировка",
+      "description": "Текст обращения",
+      "subject": "Тема",
+      "decisionCode": "Решение",
+      "decisionSummary": "Краткое решение",
+      "decisionText": "Текст решения",
+      "decisionAt": "Дата решения",
+      "closureReasonCode": "Причина закрытия",
+      "closedAt": "Дата закрытия",
+      "responseSentAt": "Ответ направлен",
+      "noResponseReason": "Причина отсутствия ответа",
+      "retentionUntil": "Хранить до",
+      "applicantType": "Тип стороны",
+      "fullName": "ФИО",
+      "identifierValue": "ИИН / БИН",
+      "email": "Электронная почта",
+      "phone": "Телефон",
+      "genderCode": "Пол",
+      "regionCode": "Регион",
+      "representativeBasis": "Основание представительства",
+      "legalHoldReason": "Причина (необязательно)"
+    },
+    "error": {
+      "load": "Не удалось загрузить обращение.",
+      "notFound": "Обращение не найдено.",
+      "invalid": "Получены некорректные данные обращения.",
+      "required": "Обязательное поле.",
+      "invalidDateTime": "Некорректная дата и время.",
+      "responseOrReason": "Укажите дату ответа или причину его отсутствия.",
+      "noChanges": "Нет изменений для сохранения."
+    },
+    "comments": {
+      "title": "Комментарии",
+      "unavailable": "Комментарии временно недоступны.",
+      "empty": "Комментариев нет.",
+      "add": "Новый комментарий",
+      "adding": "Добавление…",
+      "submit": "Добавить комментарий"
+    },
+    "edit": {
+      "title": "Редактировать данные",
+      "submit": "Сохранить",
+      "submitting": "Сохранение…",
+      "success": "Изменения сохранены."
+    },
+    "classify": {
+      "title": "Классификация",
+      "submit": "Сохранить классификацию",
+      "submitting": "Сохранение…",
+      "success": "Классификация обновлена."
+    },
+    "decision": {
+      "title": "Записать решение",
+      "submit": "Сохранить решение",
+      "submitting": "Сохранение…",
+      "success": "Решение записано."
+    },
+    "close": {
+      "title": "Закрыть обращение",
+      "submit": "Закрыть обращение",
+      "submitting": "Закрытие…",
+      "alreadyClosed": "Обращение уже закрыто."
+    },
+    "legalHold": {
+      "title": "Юридическая блокировка",
+      "on": "Блокировка установлена.",
+      "off": "Блокировка не установлена.",
+      "set": "Установить блокировку",
+      "clear": "Снять блокировку",
+      "submitting": "Сохранение…"
+    }
+  },
   "pagination": {
     "summary": "Страница {{page}} — всего {{total}}",
     "prev": "Назад",

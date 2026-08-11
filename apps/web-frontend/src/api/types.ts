@@ -154,22 +154,130 @@ export interface ApplicantResponse {
 }
 
 /**
- * The appeal card returned after registration (BFF `TicketResponse`).
+ * The full appeal card (BFF `TicketResponse`).
  *
- * This frontend uses only the fields relevant to confirming a registration (identity, registration
- * number, version); the remaining card fields are added when the card view is built (01E-4).
+ * Returned by registration and every card command, and carried by the workspace `ticket` section.
+ * All regulatory fields (SLA deadlines, decision, closure, retention, legal hold) are projected so
+ * the card view (01E-4) can render them; the decoder validates every field.
  */
 export interface TicketResponse {
   id: string;
   registrationNumber: string;
+  receivedAt: string;
+  registeredAt: string;
+  sourceChannelCode: string;
   subject: string;
+  description: string;
   productCode: string;
   classifierCode: string;
   priorityCode: string;
   currentStatusCode: string;
   currentStageCode: string;
+  currentTeamId: string | null;
+  currentAssigneeId: string | null;
+  contractNumber: string | null;
+  legalDueAt: string | null;
+  internalDueAt: string | null;
+  slaPolicyVersion: string | null;
+  decisionCode: string | null;
+  decisionSummary: string | null;
+  decisionText: string | null;
+  decisionAt: string | null;
+  decisionBy: string | null;
+  closureReasonCode: string | null;
+  closedAt: string | null;
+  responseSentAt: string | null;
+  noResponseReason: string | null;
+  retentionUntil: string | null;
+  legalHold: boolean;
   isConfidential: boolean;
   version: number;
+  applicants: ApplicantResponse[];
+}
+
+/** A comment on an appeal (BFF `CommentResponse`). */
+export interface CommentResponse {
+  id: string;
+  ticketId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+}
+
+/** Read status of an aggregated workspace section (BFF `WorkspaceSection.status`). */
+export type WorkspaceSectionStatus = "ok" | "unavailable" | "not_implemented";
+
+/**
+ * A single aggregated workspace section (BFF `WorkspaceSection`).
+ *
+ * `data` carries the section payload only when `status` is `ok`; it is `null` otherwise. The payload
+ * is left as the decoded JSON value here and narrowed by the page (the ticket section to a card, the
+ * comments section to a comment list).
+ */
+export interface WorkspaceSection {
+  status: WorkspaceSectionStatus;
+  data: unknown;
+}
+
+/** The workspace sections aggregated for an appeal (BFF `WorkspaceSections`). */
+export interface WorkspaceSections {
+  ticket: WorkspaceSection;
+  comments: WorkspaceSection;
+  process: WorkspaceSection;
+  mail: WorkspaceSection;
+  documents: WorkspaceSection;
+}
+
+/** The aggregated appeal workspace (BFF `Workspace`). */
+export interface Workspace {
+  ticketId: string;
+  degraded: boolean;
+  sections: WorkspaceSections;
+}
+
+/** Request body for `PATCH /api/v1/tickets/{ticketId}` (BFF `UpdateTicketRequest`). */
+export interface UpdateTicketRequest {
+  expectedVersion: number;
+  subject?: string | null;
+  description?: string | null;
+  sourceChannelCode?: string | null;
+  contractNumber?: string | null;
+}
+
+/** Request body for `POST /api/v1/tickets/{ticketId}/classify` (BFF `ClassifyRequest`). */
+export interface ClassifyRequest {
+  expectedVersion: number;
+  productCode: string;
+  classifierCode: string;
+  priorityCode: string;
+}
+
+/** Request body for `POST /api/v1/tickets/{ticketId}/decision` (BFF `RecordDecisionRequest`). */
+export interface RecordDecisionRequest {
+  expectedVersion: number;
+  decisionCode: string;
+  decisionSummary?: string | null;
+  decisionText: string;
+}
+
+/** Request body for `POST /api/v1/tickets/{ticketId}/close` (BFF `CloseTicketRequest`). */
+export interface CloseTicketRequest {
+  expectedVersion: number;
+  closureReasonCode: string;
+  responseSentAt?: string | null;
+  noResponseReason?: string | null;
+}
+
+/** Request body for `POST /api/v1/tickets/{ticketId}/legal-hold` (BFF `LegalHoldRequest`). */
+export interface LegalHoldRequest {
+  expectedVersion: number;
+  legalHold: boolean;
+  reason?: string | null;
+}
+
+/** Request body for `POST /api/v1/tickets/{ticketId}/comments` (BFF `CommentRequest`). */
+export interface CommentRequest {
+  body: string;
 }
 
 /** A single active reference-dictionary entry (BFF `ReferenceEntry`). */

@@ -6,9 +6,10 @@ Structured map of the web frontend. Kept current as behavior changes (Definition
 ## Responsibility
 
 The operator-facing single-page application (React + TypeScript). It renders login, the appeal
-list/search UI, and the manual appeal-registration form, and talks exclusively to the BFF gateway
-over the same-origin `/api/v1` surface. It holds no business logic and no direct access to Flowable,
-databases, or the filesystem (architectural prohibition, root `CLAUDE.md`).
+list/search UI, the manual appeal-registration form, and the appeal card (with comments and the card
+commands), and talks exclusively to the BFF gateway over the same-origin `/api/v1` surface. It holds
+no business logic and no direct access to Flowable, databases, or the filesystem (architectural
+prohibition, root `CLAUDE.md`).
 
 ## Owned data
 
@@ -17,16 +18,40 @@ None. The only client-side state is the current session (access token and resolv
 
 ## Consumed API (BFF gateway)
 
-| Method | Path                     | Used for                                          |
-| ------ | ------------------------ | ------------------------------------------------- |
-| POST   | `/api/v1/auth/login`     | Dev/local login → access token and claims.        |
-| GET    | `/api/v1/tickets`        | Appeal search/list with filters and pagination.   |
-| POST   | `/api/v1/tickets`        | Manual appeal registration (`ticket:create`).     |
-| GET    | `/api/v1/reference-data` | Reference-code selects for the registration form. |
+| Method | Path                                    | Used for                                            |
+| ------ | --------------------------------------- | --------------------------------------------------- |
+| POST   | `/api/v1/auth/login`                    | Dev/local login → access token and claims.          |
+| GET    | `/api/v1/tickets`                       | Appeal search/list with filters and pagination.     |
+| POST   | `/api/v1/tickets`                       | Manual appeal registration (`ticket:create`).       |
+| GET    | `/api/v1/reference-data`                | Reference-code selects and card labels.             |
+| GET    | `/api/v1/tickets/{ticketId}/workspace`  | Appeal card + comments aggregation (`ticket:read`). |
+| PATCH  | `/api/v1/tickets/{ticketId}`            | Edit card details (`ticket:update`).                |
+| POST   | `/api/v1/tickets/{ticketId}/classify`   | Re-classify an appeal (`ticket:classify`).          |
+| POST   | `/api/v1/tickets/{ticketId}/decision`   | Record a decision (`ticket:decide`).                |
+| POST   | `/api/v1/tickets/{ticketId}/close`      | Close an appeal (`ticket:close`).                   |
+| POST   | `/api/v1/tickets/{ticketId}/legal-hold` | Set/clear the legal hold (`ticket:legal_hold`).     |
+| POST   | `/api/v1/tickets/{ticketId}/comments`   | Add a comment (`ticket:comment`).                   |
 
 Transport types are a hand-maintained projection of `contracts/openapi/bff-service.v1.yaml`
-(`src/api/types.ts`); update them when the BFF contract changes. Later subtasks consume more of the
-gateway API (workspace, card commands).
+(`src/api/types.ts`); update them when the BFF contract changes.
+
+## Appeal card (01E-4)
+
+- The card page (`src/features/tickets/TicketCardPage.tsx`, route `/tickets/:ticketId`) reads the
+  aggregated workspace and renders the regulatory detail read-only, the applicants, the comments, and
+  the command forms. The workspace `ticket` and `comments` section payloads (contract-opaque
+  `unknown`) are narrowed with the same runtime decoders used on direct responses; a card decode
+  failure fails closed, an unavailable/invalid comments section degrades.
+- Command forms (`src/features/tickets/CardCommands.tsx`) are each rendered only when the caller holds
+  the matching permission claim, so a first-line read-only user (`ticket:read` only) sees the card and
+  comments with **no** editing controls (the gateway and Ticket Service enforce the same claims;
+  UI gating is convenience, not the security boundary). Every command carries the card `version` as
+  `expectedVersion` for optimistic locking; the forms remount on the new version after a successful
+  command so their inputs reset to the refreshed card. Client-side validation
+  (`src/features/tickets/cardCommandValues.ts`) mirrors the regulatory rules (a decision needs a code
+  and text; a closure needs a reason and either a response date or a recorded reason for its absence).
+- Dictionary codes on the card (status, stage, product, decision, closure reason, …) are shown with
+  their localized business labels from the reference-data endpoint, falling back to the raw code.
 
 ## Auth and session
 
@@ -112,7 +137,9 @@ and TanStack Query: login success/invalid/malformed-response, malformed/missing 
 roles and unknown-role fail-closed, list/empty/forbidden, filter mapping and pagination, all
 contracted error statuses and Retry-After, timeout/network/invalid-shape, correlation diagnostics,
 request cancellation on unmount, two-user cache isolation (including post-logout completion), XSS-
-safe rendering, and frontend-to-BFF contract parity. `npm audit` runs in CI (fail on high/critical).
+safe rendering, the card view with first-line read-only gating and the command value builders, the
+end-to-end registration→decision→close flow (via a stateful URL-routed `fetch` stub), and
+frontend-to-BFF contract parity. `npm audit` runs in CI (fail on high/critical).
 
 ## Migrations
 
@@ -120,6 +147,8 @@ None (the frontend owns no database).
 
 ## Known limitations
 
-- Appeal card/comments/decision/close are delivered in 01E-4; manual registration in 01E-3.
+- Status changes are placeholder in EP-1 (no Flowable): the card renders `currentStatusCode`/
+  `currentStageCode` but the app never sets them; the process/mail/documents workspace sections are
+  `not_implemented` placeholders until later phases.
 - Dev/local login only (docs/06); corporate OIDC replaces it later (TASK_06).
-- Minimal styling; no design system in this milestone.
+- Minimal styling; the consistent visual design and accessibility pass is 01E-5.

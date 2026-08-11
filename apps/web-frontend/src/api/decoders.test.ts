@@ -4,7 +4,10 @@
 import { describe, expect, it } from "vitest";
 import {
   SUPPORTED_ROLES,
+  decodeApplicant,
   decodeAuthContext,
+  decodeComment,
+  decodeCommentList,
   decodePageMeta,
   decodePaginatedTickets,
   decodeProblem,
@@ -12,6 +15,7 @@ import {
   decodeTicketResponse,
   decodeTicketSummary,
   decodeTokenResponse,
+  decodeWorkspace,
 } from "./decoders";
 import { ProtocolError } from "./errors";
 import type { TicketSummary, TokenResponse } from "./types";
@@ -297,14 +301,36 @@ function validTicketResponse(
   return {
     id: UUID_B,
     registrationNumber: "AP-2026-000001",
+    receivedAt: "2026-08-01T09:00:00Z",
+    registeredAt: "2026-08-01T09:05:00Z",
+    sourceChannelCode: "EMAIL",
     subject: "subject",
+    description: "full appeal text",
     productCode: "MICROLOAN",
     classifierCode: "COMPLAINT",
     priorityCode: "NORMAL",
     currentStatusCode: "NEW",
     currentStageCode: "REGISTRATION",
+    currentTeamId: null,
+    currentAssigneeId: null,
+    contractNumber: null,
+    legalDueAt: null,
+    internalDueAt: null,
+    slaPolicyVersion: null,
+    decisionCode: null,
+    decisionSummary: null,
+    decisionText: null,
+    decisionAt: null,
+    decisionBy: null,
+    closureReasonCode: null,
+    closedAt: null,
+    responseSentAt: null,
+    noResponseReason: null,
+    retentionUntil: null,
+    legalHold: false,
     isConfidential: false,
     version: 1,
+    applicants: [],
     ...overrides,
   };
 }
@@ -338,5 +364,227 @@ describe("decodeTicketResponse", () => {
     const bad = validTicketResponse();
     delete bad.registrationNumber;
     expect(() => decodeTicketResponse(bad)).toThrow(ProtocolError);
+  });
+
+  it("rejects a missing applicants array", () => {
+    const bad = validTicketResponse();
+    delete bad.applicants;
+    expect(() => decodeTicketResponse(bad)).toThrow(ProtocolError);
+  });
+
+  it("rejects a calendar-impossible received-at instant", () => {
+    expect(() =>
+      decodeTicketResponse(validTicketResponse({ receivedAt: "2026-02-30T09:00:00Z" })),
+    ).toThrow(ProtocolError);
+  });
+
+  it("accepts a valid retention date", () => {
+    expect(
+      decodeTicketResponse(validTicketResponse({ retentionUntil: "2031-08-01" })).retentionUntil,
+    ).toBe("2031-08-01");
+  });
+
+  it("rejects a calendar-impossible retention date", () => {
+    expect(() =>
+      decodeTicketResponse(validTicketResponse({ retentionUntil: "2027-02-29" })),
+    ).toThrow(ProtocolError);
+  });
+
+  it("validates an embedded applicant", () => {
+    const card = decodeTicketResponse(
+      validTicketResponse({
+        applicants: [
+          {
+            id: UUID_A,
+            applicantType: "CONSUMER",
+            fullName: "Иванов Иван",
+            identifierType: "IIN",
+            identifierMasked: "******7890",
+            email: null,
+            phone: null,
+            genderCode: null,
+            birthDate: null,
+            age: null,
+            regionCode: null,
+            dataSource: "MANUAL",
+            representativeBasis: null,
+          },
+        ],
+      }),
+    );
+    expect(card.applicants[0]?.identifierMasked).toBe("******7890");
+  });
+});
+
+function validApplicant(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: UUID_A,
+    applicantType: "CONSUMER",
+    fullName: "Иванов Иван",
+    identifierType: null,
+    identifierMasked: null,
+    email: null,
+    phone: null,
+    genderCode: null,
+    birthDate: null,
+    age: null,
+    regionCode: null,
+    dataSource: "APPEAL",
+    representativeBasis: null,
+    ...overrides,
+  };
+}
+
+describe("decodeApplicant", () => {
+  it("accepts a valid applicant", () => {
+    expect(decodeApplicant(validApplicant()).applicantType).toBe("CONSUMER");
+  });
+
+  it("rejects an unknown applicant type", () => {
+    expect(() => decodeApplicant(validApplicant({ applicantType: "OTHER" }))).toThrow(
+      ProtocolError,
+    );
+  });
+
+  it("rejects a non-integer age", () => {
+    expect(() => decodeApplicant(validApplicant({ age: 3.5 }))).toThrow(ProtocolError);
+  });
+
+  it("accepts a valid birth date", () => {
+    expect(decodeApplicant(validApplicant({ birthDate: "1990-02-28" })).birthDate).toBe(
+      "1990-02-28",
+    );
+  });
+
+  it("rejects a calendar-impossible birth date", () => {
+    expect(() => decodeApplicant(validApplicant({ birthDate: "2026-02-30" }))).toThrow(
+      ProtocolError,
+    );
+  });
+
+  it("rejects a date-time where a plain date is expected", () => {
+    expect(() => decodeApplicant(validApplicant({ birthDate: "1990-02-28T00:00:00Z" }))).toThrow(
+      ProtocolError,
+    );
+  });
+});
+
+function validComment(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: UUID_A,
+    ticketId: UUID_B,
+    authorId: UUID_A,
+    body: "a comment",
+    createdAt: "2026-08-01T10:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("decodeComment / decodeCommentList", () => {
+  it("accepts a valid comment", () => {
+    expect(decodeComment(validComment()).body).toBe("a comment");
+  });
+
+  it("rejects a comment with a non-UUID author", () => {
+    expect(() => decodeComment(validComment({ authorId: "author" }))).toThrow(ProtocolError);
+  });
+
+  it("decodes a list of comments", () => {
+    expect(decodeCommentList([validComment(), validComment()])).toHaveLength(2);
+  });
+
+  it("rejects a non-array comment list", () => {
+    expect(() => decodeCommentList({})).toThrow(ProtocolError);
+  });
+});
+
+function validWorkspace(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  const placeholder = { status: "not_implemented", data: null };
+  return {
+    ticketId: UUID_B,
+    degraded: false,
+    sections: {
+      ticket: { status: "ok", data: validTicketResponse() },
+      comments: { status: "ok", data: [validComment()] },
+      process: placeholder,
+      mail: placeholder,
+      documents: placeholder,
+    },
+    ...overrides,
+  };
+}
+
+describe("decodeWorkspace", () => {
+  it("accepts a valid workspace envelope", () => {
+    const workspace = decodeWorkspace(validWorkspace());
+    expect(workspace.ticketId).toBe(UUID_B);
+    expect(workspace.sections.ticket.status).toBe("ok");
+    expect(workspace.sections.process.status).toBe("not_implemented");
+  });
+
+  it("accepts a degraded workspace with an unavailable comments section", () => {
+    const workspace = decodeWorkspace(
+      validWorkspace({
+        degraded: true,
+        sections: {
+          ticket: { status: "ok", data: validTicketResponse() },
+          comments: { status: "unavailable", data: null },
+          process: { status: "not_implemented", data: null },
+          mail: { status: "not_implemented", data: null },
+          documents: { status: "not_implemented", data: null },
+        },
+      }),
+    );
+    expect(workspace.degraded).toBe(true);
+    expect(workspace.sections.comments.status).toBe("unavailable");
+    expect(workspace.sections.comments.data).toBeNull();
+  });
+
+  it("rejects an unknown section status", () => {
+    expect(() =>
+      decodeWorkspace(
+        validWorkspace({
+          sections: {
+            ticket: { status: "broken", data: null },
+            comments: { status: "ok", data: [] },
+            process: { status: "not_implemented", data: null },
+            mail: { status: "not_implemented", data: null },
+            documents: { status: "not_implemented", data: null },
+          },
+        }),
+      ),
+    ).toThrow(ProtocolError);
+  });
+
+  it("rejects a section missing the required data field", () => {
+    expect(() =>
+      decodeWorkspace(
+        validWorkspace({
+          sections: {
+            ticket: { status: "ok" },
+            comments: { status: "ok", data: [] },
+            process: { status: "not_implemented", data: null },
+            mail: { status: "not_implemented", data: null },
+            documents: { status: "not_implemented", data: null },
+          },
+        }),
+      ),
+    ).toThrow(ProtocolError);
+  });
+
+  it("rejects a non-ok section that still carries data", () => {
+    expect(() =>
+      decodeWorkspace(
+        validWorkspace({
+          sections: {
+            ticket: { status: "ok", data: validTicketResponse() },
+            comments: { status: "unavailable", data: [validComment()] },
+            process: { status: "not_implemented", data: null },
+            mail: { status: "not_implemented", data: null },
+            documents: { status: "not_implemented", data: null },
+          },
+        }),
+      ),
+    ).toThrow(ProtocolError);
   });
 });

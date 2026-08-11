@@ -14,6 +14,7 @@ import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 import { AuthProvider } from "../auth/AuthContext";
 import type { Session } from "../auth/session";
+import type { TicketResponse } from "../api/types";
 import "../i18n";
 
 /** Options for `renderWithProviders`. */
@@ -141,6 +142,30 @@ export function stubFetch(responses: FakeResponse[]): ReturnType<typeof vi.fn> {
   return fn;
 }
 
+/**
+ * Install a `fetch` stub that dispatches each call to a handler by URL and method.
+ *
+ * Unlike `stubFetch` (which returns canned responses in call order), this routes each request to a
+ * handler that inspects the URL and request init, so a page firing several concurrent or ordered
+ * requests (for example, the card workspace plus reference-data reads, then command posts) can return
+ * the right response per endpoint and keep mutable state across calls.
+ *
+ * Args:
+ *   handler: A function returning the fake response for a given URL and request init.
+ *
+ * Returns:
+ *   The Vitest mock function so tests can assert on call arguments.
+ */
+export function stubFetchByUrl(
+  handler: (url: string, init: RequestInit) => FakeResponse,
+): ReturnType<typeof vi.fn> {
+  const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    makeResponse(handler(String(input), init ?? {})),
+  );
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
 /** A pending fetch call that a test can resolve or reject on demand. */
 export interface DeferredCall {
   /** The URL the client requested. */
@@ -189,6 +214,57 @@ export function stubDeferredFetch(): DeferredCall[] {
   });
   vi.stubGlobal("fetch", fn);
   return calls;
+}
+
+/**
+ * Build a full, contract-valid appeal card for tests, applying any overrides.
+ *
+ * The base card is a freshly registered appeal (no decision, not closed); tests override only the
+ * fields they exercise. Every field the `TicketResponse` decoder validates is present so the card
+ * passes runtime decoding when returned by a stubbed response.
+ *
+ * Args:
+ *   overrides: Fields to override on the base card.
+ *
+ * Returns:
+ *   A complete appeal card.
+ */
+export function makeTicketCard(overrides: Partial<TicketResponse> = {}): TicketResponse {
+  return {
+    id: "00000000-0000-0000-0000-0000000000cc",
+    registrationNumber: "AP-2026-000123",
+    receivedAt: "2026-08-01T09:00:00Z",
+    registeredAt: "2026-08-01T09:05:00Z",
+    sourceChannelCode: "EMAIL",
+    subject: "Restructuring request",
+    description: "Full appeal text",
+    productCode: "MICROLOAN",
+    classifierCode: "RESTRUCTURING",
+    priorityCode: "NORMAL",
+    currentStatusCode: "NEW",
+    currentStageCode: "REGISTRATION",
+    currentTeamId: null,
+    currentAssigneeId: null,
+    contractNumber: null,
+    legalDueAt: null,
+    internalDueAt: null,
+    slaPolicyVersion: null,
+    decisionCode: null,
+    decisionSummary: null,
+    decisionText: null,
+    decisionAt: null,
+    decisionBy: null,
+    closureReasonCode: null,
+    closedAt: null,
+    responseSentAt: null,
+    noResponseReason: null,
+    retentionUntil: null,
+    legalHold: false,
+    isConfidential: false,
+    version: 1,
+    applicants: [],
+    ...overrides,
+  };
 }
 
 /** A seeded employee session usable by tests that need an authenticated caller. */

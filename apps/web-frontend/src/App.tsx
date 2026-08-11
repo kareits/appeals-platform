@@ -9,6 +9,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "./features/login/LoginPage";
 import { TicketListPage } from "./features/tickets/TicketListPage";
 import { RegisterTicketPage } from "./features/tickets/RegisterTicketPage";
+import { TicketCardPage } from "./features/tickets/TicketCardPage";
 import { RequireAuth } from "./routing/RequireAuth";
 import { AppLayout } from "./components/AppLayout";
 
@@ -38,6 +39,16 @@ export function App(): React.JSX.Element {
           <RequireAuth>
             <AppLayout>
               <RegisterTicketPage />
+            </AppLayout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/tickets/:ticketId"
+        element={
+          <RequireAuth>
+            <AppLayout>
+              <TicketCardPage />
             </AppLayout>
           </RequireAuth>
         }

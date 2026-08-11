@@ -5,6 +5,7 @@
  * pure presentational component (no data fetching) so it is straightforward to test in isolation.
  */
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import type { TicketSummary } from "../../api/types";
 import { formatDateTime } from "../../lib/format";
 
@@ -45,7 +46,9 @@ export function TicketTable({ items }: TicketTableProps): React.JSX.Element {
       <tbody>
         {items.map((ticket) => (
           <tr key={ticket.id}>
-            <td>{ticket.registrationNumber}</td>
+            <td>
+              <Link to={`/tickets/${ticket.id}`}>{ticket.registrationNumber}</Link>
+            </td>
             <td>{ticket.subject}</td>
             <td>{ticket.currentStatusCode}</td>
             <td>{ticket.currentStageCode}</td>

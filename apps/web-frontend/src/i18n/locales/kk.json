@@ -113,6 +113,110 @@
       "identifierPair": "Идентификатордың түрі мен мәнін де көрсетіңіз немесе екеуін де бос қалдырыңыз."
     }
   },
+  "card": {
+    "title": "{{number}} өтініші",
+    "backToList": "Өтініштер тізіміне",
+    "loading": "Өтініш жүктелуде…",
+    "forbidden": "Өтінішті көру үшін құқық жеткіліксіз.",
+    "referenceError": "Анықтамалықтарды жүктеу мүмкін болмады — кодтар түсіндірмесіз көрсетілген.",
+    "required": "Міндетті өріс",
+    "selectPlaceholder": "— таңдаңыз —",
+    "flag": { "yes": "Иә", "no": "Жоқ" },
+    "section": {
+      "details": "Өтініш деректері",
+      "applicants": "Тараптар",
+      "decision": "Шешім",
+      "closure": "Жабу"
+    },
+    "applicantType": {
+      "CONSUMER": "Өтініш беруші",
+      "REPRESENTATIVE": "Өкіл"
+    },
+    "field": {
+      "status": "Мәртебе",
+      "stage": "Кезең",
+      "sourceChannelCode": "Түсу арнасы",
+      "productCode": "Өнім",
+      "classifierCode": "Жіктеуіш",
+      "priorityCode": "Басымдық",
+      "contractNumber": "Шарт нөмірі",
+      "receivedAt": "Түсті",
+      "registeredAt": "Тіркелді",
+      "internalDueAt": "Ішкі мерзім",
+      "legalDueAt": "Реттеуші мерзім",
+      "isConfidential": "Құпия",
+      "legalHold": "Заңды бұғаттау",
+      "description": "Өтініш мәтіні",
+      "subject": "Тақырып",
+      "decisionCode": "Шешім",
+      "decisionSummary": "Қысқаша шешім",
+      "decisionText": "Шешім мәтіні",
+      "decisionAt": "Шешім күні",
+      "closureReasonCode": "Жабу себебі",
+      "closedAt": "Жабылған күні",
+      "responseSentAt": "Жауап жіберілді",
+      "noResponseReason": "Жауаптың болмау себебі",
+      "retentionUntil": "Сақтау мерзімі",
+      "applicantType": "Тарап түрі",
+      "fullName": "Аты-жөні",
+      "identifierValue": "ЖСН / БСН",
+      "email": "Электрондық пошта",
+      "phone": "Телефон",
+      "genderCode": "Жынысы",
+      "regionCode": "Өңір",
+      "representativeBasis": "Өкілдік негізі",
+      "legalHoldReason": "Себебі (міндетті емес)"
+    },
+    "error": {
+      "load": "Өтінішті жүктеу мүмкін болмады.",
+      "notFound": "Өтініш табылмады.",
+      "invalid": "Өтініштің қате деректері алынды.",
+      "required": "Міндетті өріс.",
+      "invalidDateTime": "Күні мен уақыты қате.",
+      "responseOrReason": "Жауап күнін немесе оның болмау себебін көрсетіңіз.",
+      "noChanges": "Сақтайтын өзгеріс жоқ."
+    },
+    "comments": {
+      "title": "Пікірлер",
+      "unavailable": "Пікірлер уақытша қолжетімсіз.",
+      "empty": "Пікірлер жоқ.",
+      "add": "Жаңа пікір",
+      "adding": "Қосылуда…",
+      "submit": "Пікір қосу"
+    },
+    "edit": {
+      "title": "Деректерді өңдеу",
+      "submit": "Сақтау",
+      "submitting": "Сақталуда…",
+      "success": "Өзгерістер сақталды."
+    },
+    "classify": {
+      "title": "Жіктеу",
+      "submit": "Жіктеуді сақтау",
+      "submitting": "Сақталуда…",
+      "success": "Жіктеу жаңартылды."
+    },
+    "decision": {
+      "title": "Шешім жазу",
+      "submit": "Шешімді сақтау",
+      "submitting": "Сақталуда…",
+      "success": "Шешім жазылды."
+    },
+    "close": {
+      "title": "Өтінішті жабу",
+      "submit": "Өтінішті жабу",
+      "submitting": "Жабылуда…",
+      "alreadyClosed": "Өтініш қазірдің өзінде жабылған."
+    },
+    "legalHold": {
+      "title": "Заңды бұғаттау",
+      "on": "Бұғаттау орнатылды.",
+      "off": "Бұғаттау орнатылмаған.",
+      "set": "Бұғаттауды орнату",
+      "clear": "Бұғаттауды алып тастау",
+      "submitting": "Сақталуда…"
+    }
+  },
   "pagination": {
     "summary": "{{page}}-бет — барлығы {{total}}",
     "prev": "Артқа",

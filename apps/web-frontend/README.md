@@ -2,19 +2,26 @@
 
 The web frontend of the MFO Appeals Platform: a React + TypeScript single-page application. It is
 the operator UI and talks only to the BFF gateway over the same-origin `/api/v1` surface. Delivered
-incrementally across the EP-1 frontend subtasks; through TASK_01E-3 it covers dev-login, the appeal
-list with search/filter, and manual appeal registration.
+incrementally across the EP-1 frontend subtasks; through TASK_01E-4 it covers dev-login, the appeal
+list with search/filter, manual appeal registration, and the appeal card with comments and commands.
 
-## Scope (TASK_01E-2, TASK_01E-3)
+## Scope (TASK_01E-2 … TASK_01E-4)
 
 - Dev/local login (`POST /api/v1/auth/login` via the BFF) and session handling.
 - Appeal list with search and filters (`GET /api/v1/tickets` via the BFF), with pagination.
 - Manual appeal registration (`POST /api/v1/tickets` via the BFF) with client-side validation of
   required fields, nullable demographic (conditional) fields, and reference-code selects populated
   from `GET /api/v1/reference-data` (TASK_01E-3).
+- Appeal card (`/tickets/:ticketId`) reading the aggregated workspace
+  (`GET /api/v1/tickets/{id}/workspace`): the regulatory detail read-only, applicants, comments, and
+  the card commands — edit details, re-classify, record decision, close, set/clear legal hold, and
+  add comment. Each command is gated by its permission claim, so a first-line read-only user sees the
+  card and comments with no editing controls; commands use `expectedVersion` optimistic locking, and
+  the close form enforces the regulatory "response date or a recorded reason" rule client-side
+  (TASK_01E-4).
 - UI text in the localization layer (Russian and Kazakh), per ADR-015.
 
-The appeal card with comments/decision/close (01E-4) is added in a later subtask.
+The consistent visual design and accessibility pass over these screens is TASK_01E-5.
 
 ## Tech stack
 
@@ -34,8 +41,9 @@ src/
   components/   Shared UI (app shell, language switcher).
   features/
     login/      Login page.
-    tickets/    Appeal list, search form, results table, the manual-registration form/page, and the
-                search/reference-data/create hooks.
+    tickets/    Appeal list, search form, results table, the manual-registration form/page, the
+                appeal card page with its command forms and comments, and the
+                search/reference-data/create/workspace/command hooks and value builders.
   i18n/         i18next setup and the ru/kk dictionaries.
   lib/          Small formatting helpers.
   routing/      The authentication route guard.
@@ -96,7 +104,9 @@ is scoped per authenticated user and cleared on logout/401 so no data crosses se
 
 ## Known limitations
 
-- No individual appeal card yet (opening a row is delivered in 01E-4).
+- Status/stage are placeholder in EP-1 (no Flowable): the card displays them but the app never
+  changes them; the workspace process/mail/documents sections are `not_implemented` placeholders
+  until later phases.
 - The dev/local login is temporary (docs/06); corporate OIDC replaces it later (TASK_06). The token
   is held in `sessionStorage` for the tab session only.
-- Styling is intentionally minimal; a design system is out of scope for this milestone.
+- Styling is intentionally minimal; the design system and accessibility pass is TASK_01E-5.

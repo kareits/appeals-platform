@@ -20,6 +20,7 @@ interface PropSchema {
   type?: string | string[];
   format?: string;
   items?: { type?: string; format?: string };
+  enum?: string[];
 }
 
 interface SchemaObject {
@@ -108,6 +109,85 @@ describe("BFF contract parity", () => {
     // Registration (01E-3) and reference-data lookups the frontend also calls.
     expect(contract.paths["/tickets"]?.post).toBeDefined();
     expect(contract.paths["/reference-data"]?.get).toBeDefined();
+    // Appeal card + commands (01E-4).
+    expect(contract.paths["/tickets/{ticketId}/workspace"]?.get).toBeDefined();
+    expect(contract.paths["/tickets/{ticketId}"]?.patch).toBeDefined();
+    expect(contract.paths["/tickets/{ticketId}/classify"]?.post).toBeDefined();
+    expect(contract.paths["/tickets/{ticketId}/decision"]?.post).toBeDefined();
+    expect(contract.paths["/tickets/{ticketId}/close"]?.post).toBeDefined();
+    expect(contract.paths["/tickets/{ticketId}/legal-hold"]?.post).toBeDefined();
+    expect(contract.paths["/tickets/{ticketId}/comments"]?.post).toBeDefined();
+  });
+
+  it("requires the card-command request fields the forms send", () => {
+    expect(new Set(schemas.UpdateTicketRequest!.required)).toEqual(new Set(["expectedVersion"]));
+    expect(new Set(schemas.ClassifyRequest!.required)).toEqual(
+      new Set(["expectedVersion", "productCode", "classifierCode", "priorityCode"]),
+    );
+    expect(new Set(schemas.RecordDecisionRequest!.required)).toEqual(
+      new Set(["expectedVersion", "decisionCode", "decisionText"]),
+    );
+    expect(new Set(schemas.CloseTicketRequest!.required)).toEqual(
+      new Set(["expectedVersion", "closureReasonCode"]),
+    );
+    expect(new Set(schemas.CommentRequest!.required)).toEqual(new Set(["body"]));
+    // expectedVersion carries the optimistic-lock version as a bounded integer.
+    expectProp(schemas.ClassifyRequest!, "expectedVersion", { type: "integer", nullable: false });
+  });
+
+  it("matches the full TicketResponse card fields the card decoder enforces", () => {
+    const ticket = schemas.TicketResponse!;
+    const required = new Set(ticket.required);
+    for (const field of [
+      "id",
+      "registrationNumber",
+      "receivedAt",
+      "registeredAt",
+      "sourceChannelCode",
+      "subject",
+      "description",
+      "currentStatusCode",
+      "currentStageCode",
+      "legalHold",
+      "isConfidential",
+      "version",
+      "applicants",
+    ]) {
+      expect(required.has(field), `TicketResponse must require ${field}`).toBe(true);
+    }
+    expectProp(ticket, "receivedAt", { type: "string", nullable: false, format: "date-time" });
+    expectProp(ticket, "registeredAt", { type: "string", nullable: false, format: "date-time" });
+    expectProp(ticket, "legalHold", { type: "boolean", nullable: false });
+    expectProp(ticket, "currentAssigneeId", { type: "string", nullable: true, format: "uuid" });
+    expectProp(ticket, "decisionAt", { type: "string", nullable: true, format: "date-time" });
+    expectProp(ticket, "closedAt", { type: "string", nullable: true, format: "date-time" });
+    expect(ticket.properties?.applicants?.type).toBe("array");
+  });
+
+  it("matches the CommentResponse fields the comment decoder enforces", () => {
+    const comment = schemas.CommentResponse!;
+    expect(new Set(comment.required)).toEqual(
+      new Set(["id", "ticketId", "authorId", "body", "createdAt"]),
+    );
+    expectProp(comment, "id", { type: "string", nullable: false, format: "uuid" });
+    expectProp(comment, "ticketId", { type: "string", nullable: false, format: "uuid" });
+    expectProp(comment, "authorId", { type: "string", nullable: false, format: "uuid" });
+    expectProp(comment, "body", { type: "string", nullable: false });
+    expectProp(comment, "createdAt", { type: "string", nullable: false, format: "date-time" });
+  });
+
+  it("shapes the Workspace envelope and section statuses the decoder expects", () => {
+    expect(new Set(schemas.Workspace!.required)).toEqual(
+      new Set(["ticketId", "degraded", "sections"]),
+    );
+    expect(new Set(schemas.WorkspaceSections!.required)).toEqual(
+      new Set(["ticket", "comments", "process", "mail", "documents"]),
+    );
+    const section = schemas.WorkspaceSection!;
+    expect(new Set(section.required)).toEqual(new Set(["status", "data"]));
+    expect(new Set(section.properties?.status?.enum ?? [])).toEqual(
+      new Set(["ok", "unavailable", "not_implemented"]),
+    );
   });
 
   it("requires the CreateTicketRequest fields the registration form sends", () => {

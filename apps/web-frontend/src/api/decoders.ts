@@ -12,7 +12,12 @@
  */
 import { ProtocolError } from "./errors";
 import type {
+  ApplicantResponse,
+  ApplicantType,
   AuthContext,
+  CommentResponse,
+  DataSource,
+  IdentifierType,
   PageMeta,
   PaginatedTickets,
   ProblemDetails,
@@ -22,6 +27,9 @@ import type {
   TicketResponse,
   TicketSummary,
   TokenResponse,
+  Workspace,
+  WorkspaceSection,
+  WorkspaceSectionStatus,
 } from "./types";
 
 /** The roles the frontend accepts; any other role value fails closed. */
@@ -119,6 +127,39 @@ function isValidIsoDateTime(value: string): boolean {
     if (offsetHours > 23 || offsetMinutes > 59) {
       return false;
     }
+  }
+  return true;
+}
+
+/** A calendar date `YYYY-MM-DD` (OpenAPI `format: date`) with captured components. */
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Whether a string is a real ISO-8601 calendar date (`YYYY-MM-DD`, no time component).
+ *
+ * Beyond the structural regex, this rejects calendar-impossible values (for example `2026-02-30`,
+ * February 29 in a non-leap year, month 13, day 31 of a 30-day month), mirroring the date-time
+ * validator so `format: date` fields are checked to the same standard.
+ *
+ * Args:
+ *   value: The candidate string.
+ *
+ * Returns:
+ *   True when the value is a valid calendar date.
+ */
+function isValidIsoDate(value: string): boolean {
+  const match = DATE_RE.exec(value);
+  if (!match) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) {
+    return false;
+  }
+  if (day < 1 || day > daysInMonth(year, month)) {
+    return false;
   }
   return true;
 }
@@ -333,6 +374,155 @@ function requireDateTime(source: Record<string, unknown>, key: string, context: 
   }
   return value;
 }
+
+/**
+ * Read a nullable ISO-8601 offset-aware date-time field (missing is treated as null).
+ *
+ * Args:
+ *   source: The parent object.
+ *   key: The field name.
+ *   context: A short label used in the error message.
+ *
+ * Returns:
+ *   The date-time string, or null when absent/null.
+ *
+ * Raises:
+ *   ProtocolError: When present but not a real instant.
+ */
+function nullableDateTime(
+  source: Record<string, unknown>,
+  key: string,
+  context: string,
+): string | null {
+  const value = nullableString(source, key, context);
+  if (value !== null && !isValidIsoDateTime(value)) {
+    throw new ProtocolError(`${context}.${key}: expected an ISO-8601 date-time or null`);
+  }
+  return value;
+}
+
+/**
+ * Read a nullable ISO-8601 calendar-date field (`format: date`; missing is treated as null).
+ *
+ * Args:
+ *   source: The parent object.
+ *   key: The field name.
+ *   context: A short label used in the error message.
+ *
+ * Returns:
+ *   The date string, or null when absent/null.
+ *
+ * Raises:
+ *   ProtocolError: When present but not a real calendar date.
+ */
+function nullableDate(
+  source: Record<string, unknown>,
+  key: string,
+  context: string,
+): string | null {
+  const value = nullableString(source, key, context);
+  if (value !== null && !isValidIsoDate(value)) {
+    throw new ProtocolError(`${context}.${key}: expected an ISO-8601 date or null`);
+  }
+  return value;
+}
+
+/**
+ * Read a nullable integer field (missing is treated as null).
+ *
+ * Args:
+ *   source: The parent object.
+ *   key: The field name.
+ *   context: A short label used in the error message.
+ *
+ * Returns:
+ *   The integer value, or null when absent/null.
+ *
+ * Raises:
+ *   ProtocolError: When present but not an integer.
+ */
+function nullableInteger(
+  source: Record<string, unknown>,
+  key: string,
+  context: string,
+): number | null {
+  const value = source[key];
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new ProtocolError(`${context}.${key}: expected an integer or null`);
+  }
+  return value;
+}
+
+/**
+ * Require a string field constrained to a fixed set of allowed values.
+ *
+ * Args:
+ *   source: The parent object.
+ *   key: The field name.
+ *   allowed: The permitted values.
+ *   context: A short label used in the error message.
+ *
+ * Returns:
+ *   The value, narrowed to the allowed union.
+ *
+ * Raises:
+ *   ProtocolError: When the field is missing or not one of the allowed values.
+ */
+function requireEnum<T extends string>(
+  source: Record<string, unknown>,
+  key: string,
+  allowed: readonly T[],
+  context: string,
+): T {
+  const value = requireString(source, key, context);
+  if (!allowed.includes(value as T)) {
+    throw new ProtocolError(`${context}.${key}: unexpected value`);
+  }
+  return value as T;
+}
+
+/**
+ * Read a nullable enum field (missing is treated as null).
+ *
+ * Args:
+ *   source: The parent object.
+ *   key: The field name.
+ *   allowed: The permitted values.
+ *   context: A short label used in the error message.
+ *
+ * Returns:
+ *   The value narrowed to the allowed union, or null when absent/null.
+ *
+ * Raises:
+ *   ProtocolError: When present but not one of the allowed values.
+ */
+function nullableEnum<T extends string>(
+  source: Record<string, unknown>,
+  key: string,
+  allowed: readonly T[],
+  context: string,
+): T | null {
+  const value = nullableString(source, key, context);
+  if (value === null) {
+    return null;
+  }
+  if (!allowed.includes(value as T)) {
+    throw new ProtocolError(`${context}.${key}: unexpected value`);
+  }
+  return value as T;
+}
+
+/** Party roles accepted on an appeal card (BFF `ApplicantResponse.applicantType`). */
+const APPLICANT_TYPES: readonly ApplicantType[] = ["CONSUMER", "REPRESENTATIVE"];
+
+/** Identifier kinds accepted on an appeal card (BFF `ApplicantResponse.identifierType`). */
+const IDENTIFIER_TYPES: readonly IdentifierType[] = ["IIN", "BIN"];
+
+/** Data-provenance values accepted on an appeal card (BFF `ApplicantResponse.dataSource`). */
+const DATA_SOURCES: readonly DataSource[] = ["APPEAL", "CORE_SYSTEM", "MANUAL"];
 
 /**
  * Require an array of UUID-formatted strings.
@@ -583,33 +773,204 @@ export function decodeReferenceData(raw: unknown): ReferenceDataResponse {
 }
 
 /**
- * Validate the appeal card returned after registration (BFF `TicketResponse`).
+ * Validate a party attached to an appeal card (BFF `ApplicantResponse`).
  *
- * Only the fields this frontend consumes to confirm a registration are validated; the full card is
- * decoded when the card view is built (01E-4).
+ * The national identifier only ever crosses the wire masked (`identifierMasked`); the raw value is
+ * never present in a response.
+ *
+ * Args:
+ *   raw: The parsed JSON item.
+ *
+ * Returns:
+ *   The validated applicant.
+ *
+ * Raises:
+ *   ProtocolError: When the item does not match the contract.
+ */
+export function decodeApplicant(raw: unknown): ApplicantResponse {
+  const obj = asObject(raw, "ApplicantResponse");
+  return {
+    id: requireUuid(obj, "id", "ApplicantResponse"),
+    applicantType: requireEnum(obj, "applicantType", APPLICANT_TYPES, "ApplicantResponse"),
+    fullName: nullableString(obj, "fullName", "ApplicantResponse"),
+    identifierType: nullableEnum(obj, "identifierType", IDENTIFIER_TYPES, "ApplicantResponse"),
+    identifierMasked: nullableString(obj, "identifierMasked", "ApplicantResponse"),
+    email: nullableString(obj, "email", "ApplicantResponse"),
+    phone: nullableString(obj, "phone", "ApplicantResponse"),
+    genderCode: nullableString(obj, "genderCode", "ApplicantResponse"),
+    birthDate: nullableDate(obj, "birthDate", "ApplicantResponse"),
+    age: nullableInteger(obj, "age", "ApplicantResponse"),
+    regionCode: nullableString(obj, "regionCode", "ApplicantResponse"),
+    dataSource: requireEnum(obj, "dataSource", DATA_SOURCES, "ApplicantResponse"),
+    representativeBasis: nullableString(obj, "representativeBasis", "ApplicantResponse"),
+  };
+}
+
+/**
+ * Validate the full appeal card (BFF `TicketResponse`).
+ *
+ * Returned by registration and every card command, and carried by the workspace `ticket` section.
+ * Every field the card view renders is validated; a violation fails closed rather than rendering
+ * malformed regulatory data.
  *
  * Args:
  *   raw: The parsed JSON body.
  *
  * Returns:
- *   The validated appeal card (subset).
+ *   The validated appeal card.
  *
  * Raises:
  *   ProtocolError: When the body does not match the contract.
  */
 export function decodeTicketResponse(raw: unknown): TicketResponse {
   const obj = asObject(raw, "TicketResponse");
+  const applicants = obj.applicants;
+  if (!Array.isArray(applicants)) {
+    throw new ProtocolError("TicketResponse.applicants: expected an array");
+  }
   return {
     id: requireUuid(obj, "id", "TicketResponse"),
     registrationNumber: requireString(obj, "registrationNumber", "TicketResponse"),
+    receivedAt: requireDateTime(obj, "receivedAt", "TicketResponse"),
+    registeredAt: requireDateTime(obj, "registeredAt", "TicketResponse"),
+    sourceChannelCode: requireString(obj, "sourceChannelCode", "TicketResponse"),
     subject: requireString(obj, "subject", "TicketResponse"),
+    description: requireString(obj, "description", "TicketResponse"),
     productCode: requireString(obj, "productCode", "TicketResponse"),
     classifierCode: requireString(obj, "classifierCode", "TicketResponse"),
     priorityCode: requireString(obj, "priorityCode", "TicketResponse"),
     currentStatusCode: requireString(obj, "currentStatusCode", "TicketResponse"),
     currentStageCode: requireString(obj, "currentStageCode", "TicketResponse"),
+    currentTeamId: nullableUuid(obj, "currentTeamId", "TicketResponse"),
+    currentAssigneeId: nullableUuid(obj, "currentAssigneeId", "TicketResponse"),
+    contractNumber: nullableString(obj, "contractNumber", "TicketResponse"),
+    legalDueAt: nullableDateTime(obj, "legalDueAt", "TicketResponse"),
+    internalDueAt: nullableDateTime(obj, "internalDueAt", "TicketResponse"),
+    slaPolicyVersion: nullableString(obj, "slaPolicyVersion", "TicketResponse"),
+    decisionCode: nullableString(obj, "decisionCode", "TicketResponse"),
+    decisionSummary: nullableString(obj, "decisionSummary", "TicketResponse"),
+    decisionText: nullableString(obj, "decisionText", "TicketResponse"),
+    decisionAt: nullableDateTime(obj, "decisionAt", "TicketResponse"),
+    decisionBy: nullableUuid(obj, "decisionBy", "TicketResponse"),
+    closureReasonCode: nullableString(obj, "closureReasonCode", "TicketResponse"),
+    closedAt: nullableDateTime(obj, "closedAt", "TicketResponse"),
+    responseSentAt: nullableDateTime(obj, "responseSentAt", "TicketResponse"),
+    noResponseReason: nullableString(obj, "noResponseReason", "TicketResponse"),
+    retentionUntil: nullableDate(obj, "retentionUntil", "TicketResponse"),
+    legalHold: requireBoolean(obj, "legalHold", "TicketResponse"),
     isConfidential: requireBoolean(obj, "isConfidential", "TicketResponse"),
     version: requireInteger(obj, "version", "TicketResponse"),
+    applicants: applicants.map(decodeApplicant),
+  };
+}
+
+/**
+ * Validate a single appeal comment (BFF `CommentResponse`).
+ *
+ * Args:
+ *   raw: The parsed JSON item.
+ *
+ * Returns:
+ *   The validated comment.
+ *
+ * Raises:
+ *   ProtocolError: When the item does not match the contract.
+ */
+export function decodeComment(raw: unknown): CommentResponse {
+  const obj = asObject(raw, "CommentResponse");
+  return {
+    id: requireUuid(obj, "id", "CommentResponse"),
+    ticketId: requireUuid(obj, "ticketId", "CommentResponse"),
+    authorId: requireUuid(obj, "authorId", "CommentResponse"),
+    body: requireString(obj, "body", "CommentResponse"),
+    createdAt: requireDateTime(obj, "createdAt", "CommentResponse"),
+  };
+}
+
+/**
+ * Validate a list of appeal comments.
+ *
+ * The workspace comments section carries a bare JSON array (not an envelope), so this validates the
+ * array itself and each element.
+ *
+ * Args:
+ *   raw: The parsed JSON value.
+ *
+ * Returns:
+ *   The validated comments, in the order returned.
+ *
+ * Raises:
+ *   ProtocolError: When the value is not an array or any element is invalid.
+ */
+export function decodeCommentList(raw: unknown): CommentResponse[] {
+  if (!Array.isArray(raw)) {
+    throw new ProtocolError("CommentList: expected an array");
+  }
+  return raw.map(decodeComment);
+}
+
+/** Read statuses accepted for a workspace section (BFF `WorkspaceSection.status`). */
+const SECTION_STATUSES: readonly WorkspaceSectionStatus[] = [
+  "ok",
+  "unavailable",
+  "not_implemented",
+];
+
+/**
+ * Validate a single workspace section (BFF `WorkspaceSection`).
+ *
+ * The `data` payload is left as the decoded JSON value; the page narrows it (card or comment list)
+ * only for an `ok` section. A non-`ok` section must carry null data.
+ *
+ * Args:
+ *   raw: The parsed JSON object.
+ *
+ * Returns:
+ *   The validated section.
+ *
+ * Raises:
+ *   ProtocolError: When the object does not match the contract.
+ */
+function decodeWorkspaceSection(raw: unknown, context: string): WorkspaceSection {
+  const obj = asObject(raw, context);
+  const status = requireEnum(obj, "status", SECTION_STATUSES, context);
+  // `data` is a required field in the contract (nullable, not optional): a section missing it is a
+  // malformed response and must fail closed, not be silently coerced to null.
+  if (!("data" in obj)) {
+    throw new ProtocolError(`${context}.data: required field is missing`);
+  }
+  const data = obj.data ?? null;
+  if (status !== "ok" && data !== null) {
+    throw new ProtocolError(`${context}.data: expected null for a non-ok section`);
+  }
+  return { status, data };
+}
+
+/**
+ * Validate the aggregated appeal workspace (BFF `Workspace`).
+ *
+ * Args:
+ *   raw: The parsed JSON body.
+ *
+ * Returns:
+ *   The validated workspace envelope.
+ *
+ * Raises:
+ *   ProtocolError: When the envelope or any section does not match the contract.
+ */
+export function decodeWorkspace(raw: unknown): Workspace {
+  const obj = asObject(raw, "Workspace");
+  const sections = asObject(obj.sections, "Workspace.sections");
+  return {
+    ticketId: requireUuid(obj, "ticketId", "Workspace"),
+    degraded: requireBoolean(obj, "degraded", "Workspace"),
+    sections: {
+      ticket: decodeWorkspaceSection(sections.ticket, "Workspace.sections.ticket"),
+      comments: decodeWorkspaceSection(sections.comments, "Workspace.sections.comments"),
+      process: decodeWorkspaceSection(sections.process, "Workspace.sections.process"),
+      mail: decodeWorkspaceSection(sections.mail, "Workspace.sections.mail"),
+      documents: decodeWorkspaceSection(sections.documents, "Workspace.sections.documents"),
+    },
   };
 }
 
