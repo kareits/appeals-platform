@@ -7,6 +7,7 @@
  */
 import { useTranslation } from "react-i18next";
 import { errorCorrelationId, errorMessageKey } from "../../api/errorMessages";
+import { Alert } from "../../components/ui";
 
 /** Props for the mutation-error banner. */
 export interface MutationErrorProps {
@@ -30,11 +31,11 @@ export function MutationError({ error }: MutationErrorProps): React.JSX.Element 
   }
   const correlationId = errorCorrelationId(error);
   return (
-    <div className="form-error" role="alert">
+    <Alert tone="error">
       <p>{t(errorMessageKey(error))}</p>
       {correlationId ? (
         <p className="error-correlation">{t("errors.correlation", { id: correlationId })}</p>
       ) : null}
-    </div>
+    </Alert>
   );
 }

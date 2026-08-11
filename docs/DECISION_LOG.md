@@ -233,6 +233,30 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
   Service-to-service keeps the internal scheme until a Client Credentials client exists.
 - **Status:** proposed (target for TASK_06). **Full ADR:** yes — [`docs/adr/ADR-0010-corporate-oidc-federation.md`](adr/ADR-0010-corporate-oidc-federation.md).
 
+## ADR-018. Frontend design system (CSS tokens, shared components, theming, accessibility)
+
+- **Decision:** the EP-1 frontend adopts a **plain-CSS design-token** system (custom properties for
+  color/spacing/typography/radius/shadow/focus in `src/styles/`), a small **shared component layer**
+  (`Button`/`Field`/`Input`/`Select`/`Textarea`/`Badge`/`Alert` + an accessible modal `Dialog`),
+  **light/dark/system theming** via `prefers-color-scheme` plus a `data-theme` attribute toggle, and
+  a **WCAG-AA accessibility** pass verified by an automated `axe-core` check over the four core
+  screens. Presentation only — no API/contract, business-logic, authorization, or
+  localization-content change. This supersedes ADR-0009's deliberate "minimal styling, no design
+  system" scope; every other ADR-0009 decision stands.
+- **Rationale:** ADR-0009's strict CSP (`style-src 'self'`, no `unsafe-inline`) forbids runtime
+  CSS-in-JS and the component libraries built on it, and the `sessionStorage` bearer token demands no
+  new asset origins. Plain CSS tokens add zero runtime dependencies, are fully CSP-compatible (a
+  single self-hosted stylesheet), keep `npm audit` clean, and are sufficient for the small
+  four-screen surface — decisive over Tailwind (new build tooling/supply chain) and component
+  libraries (CSP-conflicting CSS-in-JS, heavy supply chain). Theming via a `data-theme` attribute
+  (not inline styles) stays within the CSP; token color pairs meet AA contrast in both themes.
+- **Consequences:** the four screens are restyled through the token layer and shared components with
+  behavior/roles/labels preserved (existing tests stay green; axe and Dialog tests added); `axe-core`
+  is a dev-only dependency (no runtime dependency, no new origin, CSP/least-privilege runtime
+  unchanged); later frontend screens (02E-\*, 05B/05C) reuse the same system. jsdom cannot evaluate
+  contrast, so the axe run excludes it and contrast is token-guaranteed and verified visually.
+- **Status:** accepted (TASK_01E-5). **Full ADR:** yes — [`docs/adr/ADR-0011-frontend-design-system.md`](adr/ADR-0011-frontend-design-system.md).
+
 ---
 
 ## ADRs to prepare at implementation time
@@ -247,7 +271,8 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-0006 (dev-auth-authorization) | Dev/local JWT auth, bcrypt hashing, and the role→permission matrix (per-service enforcement) | TASK_01D | Written |
 | ADR-0007 (bff-gateway) | BFF auth context via IAM `/auth/me`, gateway permission enforcement, workspace aggregation with flagged partial failures, stateless empty schema | TASK_01E-1 | Written |
 | ADR-0008 (ticket-authorization) | Ticket-service independent JWT verification, permission + fail-closed data-scope/confidentiality policy, and server-derived trusted actor | TASK_01E-1 (remediation) | Written |
-| ADR-0009 (web-frontend-foundation) | React+TS/Vite SPA (Node build-time only), gateway-only access, same-origin edge routing, sessionStorage auth forward-compatible with OIDC, TanStack Query + react-i18next | TASK_01E-2 | Written |
+| ADR-0009 (web-frontend-foundation) | React+TS/Vite SPA (Node build-time only), gateway-only access, same-origin edge routing, sessionStorage auth forward-compatible with OIDC, TanStack Query + react-i18next | TASK_01E-2 | Written (minimal-styling scope superseded by ADR-0011) |
+| ADR-0011 (frontend-design-system) | Plain-CSS design tokens, shared component layer + accessible Dialog, light/dark/system theming via `data-theme`, WCAG-AA + axe check; supersedes ADR-0009's minimal-styling scope | TASK_01E-5 | Written |
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
 | ADR-STORAGE-MIGRATION | Dual-read and file migration to GridFS | TASK_03B | Pending |

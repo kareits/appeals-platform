@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/context";
 import { ApiError } from "../../api/errors";
+import { Alert, Badge, Button, badgeTone } from "../../components/ui";
 import { decodeCommentList, decodeTicketResponse } from "../../api/decoders";
 import type {
   ApplicantResponse,
@@ -189,10 +190,14 @@ function CardDetails({ card, labels, locale }: CardDetailsProps): React.JSX.Elem
   return (
     <section className="card-details" aria-label={t("card.section.details")}>
       <dl className="card-fields">
-        <CardField
-          label={t("card.field.status")}
-          value={labels("status", card.currentStatusCode)}
-        />
+        <div className="card-field">
+          <dt>{t("card.field.status")}</dt>
+          <dd>
+            <Badge tone={badgeTone("status", card.currentStatusCode)}>
+              {labels("status", card.currentStatusCode)}
+            </Badge>
+          </dd>
+        </div>
         <CardField label={t("card.field.stage")} value={labels("stage", card.currentStageCode)} />
         <CardField
           label={t("card.field.sourceChannelCode")}
@@ -206,10 +211,14 @@ function CardDetails({ card, labels, locale }: CardDetailsProps): React.JSX.Elem
           label={t("card.field.classifierCode")}
           value={labels("classifier", card.classifierCode)}
         />
-        <CardField
-          label={t("card.field.priorityCode")}
-          value={labels("priority", card.priorityCode)}
-        />
+        <div className="card-field">
+          <dt>{t("card.field.priorityCode")}</dt>
+          <dd>
+            <Badge tone={badgeTone("priority", card.priorityCode)}>
+              {labels("priority", card.priorityCode)}
+            </Badge>
+          </dd>
+        </div>
         <CardField label={t("card.field.contractNumber")} value={card.contractNumber} />
         <CardField
           label={t("card.field.receivedAt")}
@@ -307,7 +316,7 @@ export function TicketCardPage(): React.JSX.Element {
   if (!hasPermission("ticket:read")) {
     return (
       <section className="card-page">
-        <p role="alert">{t("card.forbidden")}</p>
+        <Alert tone="error">{t("card.forbidden")}</Alert>
         <Link to="/tickets">{t("card.backToList")}</Link>
       </section>
     );
@@ -333,14 +342,14 @@ export function TicketCardPage(): React.JSX.Element {
     }
     return (
       <section className="card-page">
-        <div className="form-error" role="alert">
+        <Alert tone="error">
           <p>{message}</p>
           {!notFound && !forbidden ? (
-            <button type="button" onClick={() => void workspaceQuery.refetch()}>
+            <Button type="button" onClick={() => void workspaceQuery.refetch()}>
               {t("common.retry")}
-            </button>
+            </Button>
           ) : null}
-        </div>
+        </Alert>
         <Link to="/tickets">{t("card.backToList")}</Link>
       </section>
     );
@@ -351,7 +360,7 @@ export function TicketCardPage(): React.JSX.Element {
   if (cardInvalid || card === null) {
     return (
       <section className="card-page">
-        <p role="alert">{t("card.error.invalid")}</p>
+        <Alert tone="error">{t("card.error.invalid")}</Alert>
         <Link to="/tickets">{t("card.backToList")}</Link>
       </section>
     );

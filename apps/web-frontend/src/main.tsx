@@ -10,8 +10,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { initTheme } from "./theme/theme";
 import "./i18n";
 import "./styles.css";
+
+// Apply the stored theme (light/dark/system) before the first render so a forced choice is honored
+// immediately rather than flashing the system default.
+initTheme();
 
 /** Shared query client; failed queries are not retried so auth/permission errors surface at once. */
 const queryClient = new QueryClient({

@@ -11,6 +11,7 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { CommentResponse } from "../../api/types";
 import { formatDateTime } from "../../lib/format";
+import { Button } from "../../components/ui";
 import { MutationError } from "./MutationError";
 import { useAddComment } from "./useTicketCommands";
 
@@ -102,9 +103,13 @@ export function CommentsSection({
             />
           </label>
           {mutation.isError ? <MutationError error={mutation.error} /> : null}
-          <button type="submit" disabled={mutation.isPending || body.trim() === ""}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={mutation.isPending || body.trim() === ""}
+          >
             {mutation.isPending ? t("card.comments.adding") : t("card.comments.submit")}
-          </button>
+          </Button>
         </form>
       ) : null}
     </section>

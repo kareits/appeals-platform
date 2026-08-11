@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import type { TicketSummary } from "../../api/types";
 import { formatDateTime } from "../../lib/format";
+import { Badge, badgeTone } from "../../components/ui";
 
 /** Props for the ticket table. */
 export interface TicketTableProps {
@@ -29,37 +30,47 @@ export function TicketTable({ items }: TicketTableProps): React.JSX.Element {
   const locale = i18n.resolvedLanguage ?? "ru";
 
   return (
-    <table className="ticket-table">
-      <thead>
-        <tr>
-          <th>{t("tickets.table.registrationNumber")}</th>
-          <th>{t("tickets.table.subject")}</th>
-          <th>{t("tickets.table.status")}</th>
-          <th>{t("tickets.table.stage")}</th>
-          <th>{t("tickets.table.product")}</th>
-          <th>{t("tickets.table.classifier")}</th>
-          <th>{t("tickets.table.priority")}</th>
-          <th>{t("tickets.table.receivedAt")}</th>
-          <th>{t("tickets.table.registeredAt")}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.map((ticket) => (
-          <tr key={ticket.id}>
-            <td>
-              <Link to={`/tickets/${ticket.id}`}>{ticket.registrationNumber}</Link>
-            </td>
-            <td>{ticket.subject}</td>
-            <td>{ticket.currentStatusCode}</td>
-            <td>{ticket.currentStageCode}</td>
-            <td>{ticket.productCode}</td>
-            <td>{ticket.classifierCode}</td>
-            <td>{ticket.priorityCode}</td>
-            <td>{formatDateTime(ticket.receivedAt, locale)}</td>
-            <td>{formatDateTime(ticket.registeredAt, locale)}</td>
+    <div className="table-scroll">
+      <table className="ticket-table">
+        <thead>
+          <tr>
+            <th>{t("tickets.table.registrationNumber")}</th>
+            <th>{t("tickets.table.subject")}</th>
+            <th>{t("tickets.table.status")}</th>
+            <th>{t("tickets.table.stage")}</th>
+            <th>{t("tickets.table.product")}</th>
+            <th>{t("tickets.table.classifier")}</th>
+            <th>{t("tickets.table.priority")}</th>
+            <th>{t("tickets.table.receivedAt")}</th>
+            <th>{t("tickets.table.registeredAt")}</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {items.map((ticket) => (
+            <tr key={ticket.id}>
+              <td>
+                <Link to={`/tickets/${ticket.id}`}>{ticket.registrationNumber}</Link>
+              </td>
+              <td>{ticket.subject}</td>
+              <td>
+                <Badge tone={badgeTone("status", ticket.currentStatusCode)}>
+                  {ticket.currentStatusCode}
+                </Badge>
+              </td>
+              <td>{ticket.currentStageCode}</td>
+              <td>{ticket.productCode}</td>
+              <td>{ticket.classifierCode}</td>
+              <td>
+                <Badge tone={badgeTone("priority", ticket.priorityCode)}>
+                  {ticket.priorityCode}
+                </Badge>
+              </td>
+              <td>{formatDateTime(ticket.receivedAt, locale)}</td>
+              <td>{formatDateTime(ticket.registeredAt, locale)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

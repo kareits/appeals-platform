@@ -7,7 +7,8 @@ Structured map of the web frontend. Kept current as behavior changes (Definition
 
 The operator-facing single-page application (React + TypeScript). It renders login, the appeal
 list/search UI, the manual appeal-registration form, and the appeal card (with comments and the card
-commands), and talks exclusively to the BFF gateway over the same-origin `/api/v1` surface. It holds
+commands), all through a shared design system with light/dark theming and WCAG-AA accessibility
+(01E-5), and talks exclusively to the BFF gateway over the same-origin `/api/v1` surface. It holds
 no business logic and no direct access to Flowable, databases, or the filesystem (architectural
 prohibition, root `CLAUDE.md`).
 
@@ -52,6 +53,27 @@ Transport types are a hand-maintained projection of `contracts/openapi/bff-servi
   and text; a closure needs a reason and either a response date or a recorded reason for its absence).
 - Dictionary codes on the card (status, stage, product, decision, closure reason, …) are shown with
   their localized business labels from the reference-data endpoint, falling back to the raw code.
+
+## Design system and theming (01E-5, ADR-0011)
+
+- **Design tokens** in `src/styles/` (`tokens.css` custom properties, `base.css` reset/base,
+  `components.css` component/screen styling, imported via `styles.css`) are the single source of
+  truth for color/spacing/typography/radius/shadow/focus; component CSS hard-codes no values. This is
+  a presentation-only layer — no API/contract, business-logic, authorization, or
+  localization-content change.
+- **Shared components** in `src/components/ui` (`Button`, `Field`, `Input`, `Select`, `Textarea`,
+  `Badge`, `Alert`, and an accessible modal `Dialog`) back the screens; `badgeTone` maps appeal
+  status/priority to a semantic color. The screens keep their existing roles, labels, text, and
+  `aria-label`s, so behavior and the security-relevant permission gating are unchanged.
+- **Theming**: light/dark/system. Default follows `prefers-color-scheme`; the header `ThemeToggle`
+  forces light/dark by setting a `data-theme` attribute on the document element (not an inline style,
+  so the ADR-0009 CSP `style-src 'self'` holds) and persists the choice in `localStorage`
+  (`src/theme/`). The bearer token stays in `sessionStorage`.
+- **Accessibility (WCAG-AA)**: `Field` wires `aria-invalid`/`aria-describedby` for errors/hints,
+  visible `:focus-visible` rings, the accessible `Dialog`, responsive layout, and
+  `prefers-reduced-motion`. An `axe-core` check over the four core screens runs in the test suite
+  (`src/a11y.test.tsx`); contrast is excluded from the jsdom axe run and instead enforced by a token
+  contrast unit test (`src/styles/contrast.test.ts`, ≥4.5:1 for every text/button pair, both themes).
 
 ## Auth and session
 
@@ -138,8 +160,12 @@ roles and unknown-role fail-closed, list/empty/forbidden, filter mapping and pag
 contracted error statuses and Retry-After, timeout/network/invalid-shape, correlation diagnostics,
 request cancellation on unmount, two-user cache isolation (including post-logout completion), XSS-
 safe rendering, the card view with first-line read-only gating and the command value builders, the
-end-to-end registration→decision→close flow (via a stateful URL-routed `fetch` stub), and
-frontend-to-BFF contract parity. `npm audit` runs in CI (fail on high/critical).
+end-to-end registration→decision→close flow (via a stateful URL-routed `fetch` stub),
+frontend-to-BFF contract parity, an `axe-core` WCAG A/AA check over the four core screens
+(`src/a11y.test.tsx`), a token-contrast check (`src/styles/contrast.test.ts`: every text/button color
+pair ≥ 4.5:1 in both light and dark themes — covering what jsdom axe cannot compute), and the
+accessible `Dialog` primitive (modal contract, focus trap, Escape/backdrop dismissal, focus
+restore). `npm audit` runs in CI (fail on high/critical).
 
 ## Migrations
 
@@ -151,4 +177,6 @@ None (the frontend owns no database).
   `currentStageCode` but the app never sets them; the process/mail/documents workspace sections are
   `not_implemented` placeholders until later phases.
 - Dev/local login only (docs/06); corporate OIDC replaces it later (TASK_06).
-- Minimal styling; the consistent visual design and accessibility pass is 01E-5.
+- The axe accessibility check runs in jsdom, which cannot compute color contrast. Contrast is
+  guaranteed by the WCAG-AA design tokens and enforced by a dedicated token-contrast unit test
+  (`src/styles/contrast.test.ts`, both themes); a visual pass in the browser is still recommended.

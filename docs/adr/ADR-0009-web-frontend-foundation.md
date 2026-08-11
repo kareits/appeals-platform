@@ -1,6 +1,7 @@
 # ADR-0009: Web-frontend foundation — SPA stack, gateway-only access, and same-origin edge routing
 
-- **Status:** Accepted
+- **Status:** Accepted (the "minimal styling, no design system" scope is superseded by
+  [ADR-0011](ADR-0011-frontend-design-system.md), TASK_01E-5; all other decisions here stand)
 - **Related:** ADR-002 (approved stack: React + TypeScript); ADR-0007 (BFF gateway — the single
   frontend API); ADR-0008 (Ticket-service independent authorization); ADR-015 (language policy —
   Russian/Kazakh UI text in the localization layer); ADR-AUTH-OIDC (dev-auth → corporate OIDC,

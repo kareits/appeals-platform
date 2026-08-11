@@ -8,7 +8,9 @@ import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/context";
+import { Button } from "./ui";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { ThemeToggle } from "./ThemeToggle";
 
 /**
  * Wrap authenticated page content with the product header.
@@ -26,19 +28,19 @@ export function AppLayout({ children }: { children: ReactNode }): React.JSX.Elem
       <header className="app-header">
         <h1 className="app-title">{t("app.title")}</h1>
         <div className="app-header__actions">
+          <ThemeToggle />
           <LanguageSwitcher />
           {session ? (
             <span className="app-user">{t("nav.signedInAs", { username: session.username })}</span>
           ) : null}
-          <button
-            type="button"
+          <Button
             onClick={() => {
               logout();
               navigate("/login", { replace: true });
             }}
           >
             {t("nav.logout")}
-          </button>
+          </Button>
         </div>
       </header>
       <main className="app-content">{children}</main>

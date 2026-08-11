@@ -2,8 +2,9 @@
 
 The web frontend of the MFO Appeals Platform: a React + TypeScript single-page application. It is
 the operator UI and talks only to the BFF gateway over the same-origin `/api/v1` surface. Delivered
-incrementally across the EP-1 frontend subtasks; through TASK_01E-4 it covers dev-login, the appeal
-list with search/filter, manual appeal registration, and the appeal card with comments and commands.
+incrementally across the EP-1 frontend subtasks; through TASK_01E-5 it covers dev-login, the appeal
+list with search/filter, manual appeal registration, and the appeal card with comments and commands,
+all presented through a consistent design system with light/dark theming and WCAG-AA accessibility.
 
 ## Scope (TASK_01E-2 … TASK_01E-4)
 
@@ -21,7 +22,27 @@ list with search/filter, manual appeal registration, and the appeal card with co
   (TASK_01E-4).
 - UI text in the localization layer (Russian and Kazakh), per ADR-015.
 
-The consistent visual design and accessibility pass over these screens is TASK_01E-5.
+## Design system (TASK_01E-5, ADR-0011)
+
+- **Design tokens** (`src/styles/tokens.css`): color, spacing, typography, radius, shadow, and focus
+  values as CSS custom properties — the single source of truth, with no colors/sizes hard-coded in
+  component CSS. `src/styles/base.css` holds the reset and base element styling; `components.css` the
+  component and screen styling.
+- **Shared components** (`src/components/ui`): presentation-only `Button`, `Field`, `Input`,
+  `Select`, `Textarea`, `Badge`, `Alert`, and an accessible modal `Dialog` (ARIA modal contract,
+  focus trap, Escape/backdrop dismissal, focus restore). `badgeTone` maps appeal status/priority to a
+  semantic color. Later frontend screens (02E-\*, 05B/05C) reuse these.
+- **Theming**: light/dark/system. The default follows `prefers-color-scheme`; a header toggle
+  (`ThemeToggle`) forces light or dark via a `data-theme` attribute on the document element (not an
+  inline style, so the CSP holds) and persists the choice in `localStorage`.
+- **Accessibility (WCAG-AA)**: associated labels with `aria-invalid`/`aria-describedby` error wiring,
+  visible `:focus-visible` rings, an accessible dialog, responsive layout (wrapping header,
+  scrollable tables, single-column commands on narrow viewports), and `prefers-reduced-motion`
+  support. An automated `axe-core` check runs over the four core screens in the test suite
+  (`src/a11y.test.tsx`); contrast is excluded from the jsdom run and guaranteed by the token palette.
+
+This is a presentation-only layer: no API/contract, business-logic, authorization, or
+localization-content change (ADR-0011 supersedes ADR-0009's minimal-styling scope).
 
 ## Tech stack
 
@@ -38,7 +59,8 @@ The consistent visual design and accessibility pass over these screens is TASK_0
 src/
   api/          Transport types (projected from the BFF contract) and the fetch client + endpoints.
   auth/         Session model, persistence, and the auth context (login/logout, permissions).
-  components/   Shared UI (app shell, language switcher).
+  components/   App shell, language switcher, theme toggle; ui/ holds the shared design-system
+                primitives (Button/Field/Input/Select/Textarea/Badge/Alert/Dialog).
   features/
     login/      Login page.
     tickets/    Appeal list, search form, results table, the manual-registration form/page, the
@@ -47,7 +69,9 @@ src/
   i18n/         i18next setup and the ru/kk dictionaries.
   lib/          Small formatting helpers.
   routing/      The authentication route guard.
-  test/         Test utilities (provider wrapper, fetch stub).
+  styles/       Design-system CSS: tokens.css, base.css, components.css (imported via styles.css).
+  theme/        Theme choice (light/dark/system): storage, apply-to-document, and the useTheme hook.
+  test/         Test utilities (provider wrapper, fetch stub, axe helper).
 ```
 
 ## Local development
@@ -109,4 +133,6 @@ is scoped per authenticated user and cleared on logout/401 so no data crosses se
   until later phases.
 - The dev/local login is temporary (docs/06); corporate OIDC replaces it later (TASK_06). The token
   is held in `sessionStorage` for the tab session only.
-- Styling is intentionally minimal; the design system and accessibility pass is TASK_01E-5.
+- The axe accessibility check runs in jsdom, which cannot evaluate color contrast. Contrast is
+  guaranteed by the WCAG-AA token palette and enforced by a dedicated token-contrast unit test
+  (`src/styles/contrast.test.ts`, both themes); a visual pass in the browser is still recommended.

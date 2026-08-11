@@ -1,0 +1,250 @@
+/*
+ * Design tokens for the appeal-platform web frontend (TASK_01E-5, ADR-0011).
+ *
+ * A single source of truth for color, spacing, typography, radius, shadow, and focus values,
+ * exposed as CSS custom properties so every component styles from the same scale. Colors are
+ * defined for both a light and a dark theme; the light palette is the default (and the
+ * `prefers-color-scheme: light` value), the dark palette applies under `prefers-color-scheme: dark`
+ * and can be forced either way with a `data-theme` attribute on the document element (set by the
+ * in-app theme toggle). All foreground/background pairs used for text meet WCAG-AA contrast.
+ *
+ * No colors, sizes, or fonts are hard-coded in component CSS — they reference these variables so a
+ * later brand change is a single-file edit. The token layer carries no selectors that paint the
+ * page; that is the job of base.css and components.css.
+ */
+
+:root {
+  /* Spacing scale (4px base). */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  /* Radius scale. */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Typography. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.85rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.15rem;
+  --font-size-xl: 1.4rem;
+  --line-height: 1.5;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Elevation. */
+  --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.08);
+  --shadow-md: 0 4px 12px rgba(31, 35, 40, 0.12);
+  --shadow-lg: 0 12px 32px rgba(31, 35, 40, 0.2);
+
+  /* Layout. */
+  --content-max-width: 72rem;
+  --focus-ring-width: 2px;
+
+  /* Motion. */
+  --transition-fast: 120ms ease;
+
+  /* Light theme colors (default). */
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f8fa;
+  --color-surface-raised: #ffffff;
+  --color-border: #d0d7de;
+  --color-border-strong: #afb8c1;
+  --color-text: #1f2328;
+  --color-text-muted: #57606a;
+  --color-text-invert: #ffffff;
+
+  --color-primary: #0969da;
+  --color-primary-hover: #0757ba;
+  --color-primary-text: #ffffff;
+  --color-link: #0969da;
+  --color-link-hover: #0757ba;
+
+  --color-danger: #cf222e;
+  --color-danger-hover: #a40e26;
+  --color-danger-text: #ffffff;
+
+  --color-focus: #0969da;
+
+  /* Feedback surfaces (background + border + foreground text, all AA on the surface). */
+  --color-error-bg: #ffebe9;
+  --color-error-border: #ff9492;
+  --color-error-text: #a40e26;
+  --color-success-bg: #dafbe1;
+  --color-success-border: #4ac26b;
+  --color-success-text: #1a7f37;
+  --color-info-bg: #ddf4ff;
+  --color-info-border: #54aeff;
+  --color-info-text: #0550ae;
+  --color-warning-bg: #fff8c5;
+  --color-warning-border: #d4a72c;
+  --color-warning-text: #7d4e00;
+  --color-neutral-bg: #eaeef2;
+  --color-neutral-border: #afb8c1;
+  --color-neutral-text: #24292f;
+
+  /* Backdrop for modal dialogs. */
+  --color-backdrop: rgba(31, 35, 40, 0.45);
+}
+
+/*
+ * Dark theme. Applied automatically when the OS prefers a dark scheme, unless the document is
+ * explicitly forced to light via data-theme="light" (handled below). The variables mirror the
+ * light set so components need no theme-specific rules.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --shadow-sm: 0 1px 2px rgba(1, 4, 9, 0.5);
+    --shadow-md: 0 4px 12px rgba(1, 4, 9, 0.55);
+    --shadow-lg: 0 12px 32px rgba(1, 4, 9, 0.7);
+
+    --color-bg: #0d1117;
+    --color-surface: #0d1117;
+    --color-surface-muted: #161b22;
+    --color-surface-raised: #161b22;
+    --color-border: #30363d;
+    --color-border-strong: #6e7681;
+    --color-text: #e6edf3;
+    --color-text-muted: #9198a1;
+    --color-text-invert: #ffffff;
+
+    --color-primary: #1f6feb;
+    --color-primary-hover: #1a63d8;
+    --color-primary-text: #ffffff;
+    --color-link: #4493f8;
+    --color-link-hover: #6cb6ff;
+
+    --color-danger: #da3633;
+    --color-danger-hover: #c62a2b;
+    --color-danger-text: #ffffff;
+
+    --color-focus: #4493f8;
+
+    --color-error-bg: #2d1213;
+    --color-error-border: #7d1a1a;
+    --color-error-text: #ff9a94;
+    --color-success-bg: #0f2417;
+    --color-success-border: #1f6b34;
+    --color-success-text: #57d777;
+    --color-info-bg: #0b2942;
+    --color-info-border: #1c5388;
+    --color-info-text: #79c0ff;
+    --color-warning-bg: #2e2000;
+    --color-warning-border: #7d5e00;
+    --color-warning-text: #e3b341;
+    --color-neutral-bg: #21262d;
+    --color-neutral-border: #6e7681;
+    --color-neutral-text: #e6edf3;
+
+    --color-backdrop: rgba(1, 4, 9, 0.7);
+  }
+}
+
+/*
+ * Explicit theme overrides from the in-app toggle. `data-theme` on the document element wins over
+ * the OS preference in both directions, so a user who forces light or dark keeps it regardless of
+ * the system setting.
+ */
+:root[data-theme="light"] {
+  --shadow-sm: 0 1px 2px rgba(31, 35, 40, 0.08);
+  --shadow-md: 0 4px 12px rgba(31, 35, 40, 0.12);
+  --shadow-lg: 0 12px 32px rgba(31, 35, 40, 0.2);
+
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f8fa;
+  --color-surface-raised: #ffffff;
+  --color-border: #d0d7de;
+  --color-border-strong: #afb8c1;
+  --color-text: #1f2328;
+  --color-text-muted: #57606a;
+  --color-text-invert: #ffffff;
+
+  --color-primary: #0969da;
+  --color-primary-hover: #0757ba;
+  --color-primary-text: #ffffff;
+  --color-link: #0969da;
+  --color-link-hover: #0757ba;
+
+  --color-danger: #cf222e;
+  --color-danger-hover: #a40e26;
+  --color-danger-text: #ffffff;
+
+  --color-focus: #0969da;
+
+  --color-error-bg: #ffebe9;
+  --color-error-border: #ff9492;
+  --color-error-text: #a40e26;
+  --color-success-bg: #dafbe1;
+  --color-success-border: #4ac26b;
+  --color-success-text: #1a7f37;
+  --color-info-bg: #ddf4ff;
+  --color-info-border: #54aeff;
+  --color-info-text: #0550ae;
+  --color-warning-bg: #fff8c5;
+  --color-warning-border: #d4a72c;
+  --color-warning-text: #7d4e00;
+  --color-neutral-bg: #eaeef2;
+  --color-neutral-border: #afb8c1;
+  --color-neutral-text: #24292f;
+
+  --color-backdrop: rgba(31, 35, 40, 0.45);
+}
+
+:root[data-theme="dark"] {
+  --shadow-sm: 0 1px 2px rgba(1, 4, 9, 0.5);
+  --shadow-md: 0 4px 12px rgba(1, 4, 9, 0.55);
+  --shadow-lg: 0 12px 32px rgba(1, 4, 9, 0.7);
+
+  --color-bg: #0d1117;
+  --color-surface: #0d1117;
+  --color-surface-muted: #161b22;
+  --color-surface-raised: #161b22;
+  --color-border: #30363d;
+  --color-border-strong: #6e7681;
+  --color-text: #e6edf3;
+  --color-text-muted: #9198a1;
+  --color-text-invert: #ffffff;
+
+  --color-primary: #1f6feb;
+  --color-primary-hover: #1a63d8;
+  --color-primary-text: #ffffff;
+  --color-link: #4493f8;
+  --color-link-hover: #6cb6ff;
+
+  --color-danger: #da3633;
+  --color-danger-hover: #c62a2b;
+  --color-danger-text: #ffffff;
+
+  --color-focus: #4493f8;
+
+  --color-error-bg: #2d1213;
+  --color-error-border: #7d1a1a;
+  --color-error-text: #ff9a94;
+  --color-success-bg: #0f2417;
+  --color-success-border: #1f6b34;
+  --color-success-text: #57d777;
+  --color-info-bg: #0b2942;
+  --color-info-border: #1c5388;
+  --color-info-text: #79c0ff;
+  --color-warning-bg: #2e2000;
+  --color-warning-border: #7d5e00;
+  --color-warning-text: #e3b341;
+  --color-neutral-bg: #21262d;
+  --color-neutral-border: #6e7681;
+  --color-neutral-text: #e6edf3;
+
+  --color-backdrop: rgba(1, 4, 9, 0.7);
+}

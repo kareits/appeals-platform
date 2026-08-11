@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/context";
 import { ApiError } from "../../api/errors";
 import { errorMessageKey } from "../../api/errorMessages";
+import { Alert, Button, Field, Input } from "../../components/ui";
 
 /** Router location state carrying the page the user was redirected from. */
 interface FromState {
@@ -77,36 +78,32 @@ export function LoginPage(): React.JSX.Element {
       <form className="login-form" onSubmit={onSubmit} aria-labelledby="login-title">
         <h1 id="login-title">{t("login.title")}</h1>
 
-        <label htmlFor="login-username">{t("login.username")}</label>
-        <input
-          id="login-username"
-          name="username"
-          autoComplete="username"
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-          required
-        />
+        <Field id="login-username" label={t("login.username")}>
+          <Input
+            name="username"
+            autoComplete="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            required
+          />
+        </Field>
 
-        <label htmlFor="login-password">{t("login.password")}</label>
-        <input
-          id="login-password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
+        <Field id="login-password" label={t("login.password")}>
+          <Input
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+        </Field>
 
-        {mutation.isError ? (
-          <p className="form-error" role="alert">
-            {t(loginErrorKey(mutation.error))}
-          </p>
-        ) : null}
+        {mutation.isError ? <Alert tone="error">{t(loginErrorKey(mutation.error))}</Alert> : null}
 
-        <button type="submit" disabled={mutation.isPending}>
+        <Button type="submit" variant="primary" block disabled={mutation.isPending}>
           {mutation.isPending ? t("login.submitting") : t("login.submit")}
-        </button>
+        </Button>
       </form>
     </div>
   );

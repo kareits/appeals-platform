@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/context";
 import { errorCorrelationId, errorMessageKey } from "../../api/errorMessages";
+import { Alert, Button } from "../../components/ui";
 import type { DataSource, ReferenceEntry, TicketResponse } from "../../api/types";
 import {
   EMPTY_REGISTER_VALUES,
@@ -253,7 +254,7 @@ export function RegisterTicketPage(): React.JSX.Element {
     return (
       <section className="register-page">
         <h2>{t("register.title")}</h2>
-        <p role="alert">{t("register.forbidden")}</p>
+        <Alert tone="error">{t("register.forbidden")}</Alert>
       </section>
     );
   }
@@ -333,30 +334,30 @@ export function RegisterTicketPage(): React.JSX.Element {
       <h2>{t("register.title")}</h2>
 
       {registered ? (
-        <div className="form-success" role="status">
+        <Alert tone="success">
           <p>{t("register.success", { number: registered.registrationNumber })}</p>
           <Link to="/tickets">{t("register.backToList")}</Link>
-        </div>
+        </Alert>
       ) : null}
 
       {referenceQuery.isError ? (
-        <div className="form-error" role="alert">
+        <Alert tone="error">
           <p>{t("register.referenceError")}</p>
-          <button type="button" onClick={() => void referenceQuery.refetch()}>
+          <Button type="button" onClick={() => void referenceQuery.refetch()}>
             {t("common.retry")}
-          </button>
-        </div>
+          </Button>
+        </Alert>
       ) : null}
 
       {mutation.isError ? (
-        <div className="form-error" role="alert">
+        <Alert tone="error">
           <p>{t(errorMessageKey(mutation.error))}</p>
           {errorCorrelationId(mutation.error) ? (
             <p className="error-correlation">
               {t("errors.correlation", { id: errorCorrelationId(mutation.error) })}
             </p>
           ) : null}
-        </div>
+        </Alert>
       ) : null}
 
       <form className="register-form" onSubmit={onSubmit} aria-label={t("register.title")}>
@@ -474,9 +475,9 @@ export function RegisterTicketPage(): React.JSX.Element {
         </fieldset>
 
         <div className="register-form__actions">
-          <button type="submit" disabled={mutation.isPending}>
+          <Button type="submit" variant="primary" disabled={mutation.isPending}>
             {mutation.isPending ? t("register.submitting") : t("register.submit")}
-          </button>
+          </Button>
           <Link to="/tickets">{t("register.cancel")}</Link>
         </div>
       </form>

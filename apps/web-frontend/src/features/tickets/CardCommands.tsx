@@ -11,6 +11,7 @@
  */
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Dialog } from "../../components/ui";
 import type { ReferenceEntry, TicketResponse } from "../../api/types";
 import {
   buildClassifyRequest,
@@ -217,9 +218,9 @@ export function EditDetailsForm({ card, entries }: CommandFormProps): React.JSX.
           {t("card.edit.success")}
         </p>
       ) : null}
-      <button type="submit" disabled={mutation.isPending}>
+      <Button type="submit" variant="primary" disabled={mutation.isPending}>
         {mutation.isPending ? t("card.edit.submitting") : t("card.edit.submit")}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -298,9 +299,9 @@ export function ClassifyForm({ card, entries }: CommandFormProps): React.JSX.Ele
           {t("card.classify.success")}
         </p>
       ) : null}
-      <button type="submit" disabled={mutation.isPending}>
+      <Button type="submit" variant="primary" disabled={mutation.isPending}>
         {mutation.isPending ? t("card.classify.submitting") : t("card.classify.submit")}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -381,9 +382,9 @@ export function DecisionForm({ card, entries }: CommandFormProps): React.JSX.Ele
           {t("card.decision.success")}
         </p>
       ) : null}
-      <button type="submit" disabled={mutation.isPending}>
+      <Button type="submit" variant="primary" disabled={mutation.isPending}>
         {mutation.isPending ? t("card.decision.submitting") : t("card.decision.submit")}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -473,9 +474,9 @@ export function CloseForm({ card, entries }: CommandFormProps): React.JSX.Elemen
         </p>
       ) : null}
       {mutation.isError ? <MutationError error={mutation.error} /> : null}
-      <button type="submit" disabled={mutation.isPending}>
+      <Button type="submit" variant="danger" disabled={mutation.isPending}>
         {mutation.isPending ? t("card.close.submitting") : t("card.close.submit")}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -492,16 +493,26 @@ export function CloseForm({ card, entries }: CommandFormProps): React.JSX.Elemen
 export function LegalHoldControl({ card }: { card: TicketResponse }): React.JSX.Element {
   const { t } = useTranslation();
   const [reason, setReason] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const mutation = useSetLegalHold(card.id);
 
+  // Setting or clearing a legal hold is a regulatory action (it suspends retention deletion), so it
+  // is confirmed in a modal before the mutation is sent rather than firing on the first click.
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
+    setConfirmOpen(true);
+  };
+
+  const confirm = (): void => {
+    setConfirmOpen(false);
     mutation.mutate({
       expectedVersion: card.version,
       legalHold: !card.legalHold,
       reason: reason.trim() === "" ? null : reason.trim(),
     });
   };
+
+  const actionLabel = card.legalHold ? t("card.legalHold.clear") : t("card.legalHold.set");
 
   return (
     <form className="card-command" onSubmit={onSubmit} aria-label={t("card.legalHold.title")}>
@@ -516,13 +527,27 @@ export function LegalHoldControl({ card }: { card: TicketResponse }): React.JSX.
         />
       </label>
       {mutation.isError ? <MutationError error={mutation.error} /> : null}
-      <button type="submit" disabled={mutation.isPending}>
-        {mutation.isPending
-          ? t("card.legalHold.submitting")
-          : card.legalHold
-            ? t("card.legalHold.clear")
-            : t("card.legalHold.set")}
-      </button>
+      <Button type="submit" variant="primary" disabled={mutation.isPending}>
+        {mutation.isPending ? t("card.legalHold.submitting") : actionLabel}
+      </Button>
+
+      <Dialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={t("card.legalHold.title")}
+        footer={
+          <>
+            <Button type="button" onClick={() => setConfirmOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" variant="primary" onClick={confirm}>
+              {actionLabel}
+            </Button>
+          </>
+        }
+      >
+        <p>{card.legalHold ? t("card.legalHold.confirmClear") : t("card.legalHold.confirmSet")}</p>
+      </Dialog>
     </form>
   );
 }

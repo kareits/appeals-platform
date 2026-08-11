@@ -15,6 +15,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/context";
 import { ApiError } from "../../api/errors";
 import { errorCorrelationId, errorMessageKey, retryAfterSeconds } from "../../api/errorMessages";
+import { Alert, Button } from "../../components/ui";
 import { EMPTY_FORM_VALUES, toFilters, type TicketSearchFormValues } from "./searchValues";
 import { TicketSearchForm } from "./TicketSearchForm";
 import { TicketTable } from "./TicketTable";
@@ -93,17 +94,17 @@ export function TicketListPage(): React.JSX.Element {
       {query.isLoading ? <p role="status">{t("tickets.loading")}</p> : null}
 
       {errorMessage ? (
-        <div className="form-error" role="alert">
+        <Alert tone="error">
           <p>{errorMessage}</p>
           {correlationId ? (
             <p className="error-correlation">{t("errors.correlation", { id: correlationId })}</p>
           ) : null}
           {!isAuthError(query.error) ? (
-            <button type="button" onClick={() => void query.refetch()}>
+            <Button type="button" onClick={() => void query.refetch()}>
               {t("common.retry")}
-            </button>
+            </Button>
           ) : null}
-        </div>
+        </Alert>
       ) : null}
 
       {query.isSuccess && items.length === 0 ? <p role="status">{t("tickets.empty")}</p> : null}
@@ -112,17 +113,17 @@ export function TicketListPage(): React.JSX.Element {
         <>
           <TicketTable items={items} />
           <nav className="pagination" aria-label={t("tickets.title")}>
-            <button
+            <Button
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
             >
               {t("pagination.prev")}
-            </button>
+            </Button>
             <span>{t("pagination.summary", { page, total })}</span>
-            <button type="button" onClick={() => setPage((p) => p + 1)} disabled={!hasNextPage}>
+            <Button type="button" onClick={() => setPage((p) => p + 1)} disabled={!hasNextPage}>
               {t("pagination.next")}
-            </button>
+            </Button>
           </nav>
         </>
       ) : null}

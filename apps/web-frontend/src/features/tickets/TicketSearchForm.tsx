@@ -7,6 +7,7 @@
  */
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Button, Field, Input } from "../../components/ui";
 import { EMPTY_FORM_VALUES, type TicketSearchFormValues } from "./searchValues";
 
 /** Text filter fields rendered as plain text inputs, in display order. */
@@ -74,34 +75,32 @@ export function TicketSearchForm({
         <legend>{t("tickets.search.legend")}</legend>
         <div className="ticket-search__grid">
           {TEXT_FIELDS.map((field) => (
-            <label key={field} htmlFor={`filter-${field}`}>
-              <span>{t(`tickets.search.${field}`)}</span>
-              <input
-                id={`filter-${field}`}
+            <Field key={field} id={`filter-${field}`} label={t(`tickets.search.${field}`)}>
+              <Input
                 name={field}
                 value={values[field]}
                 onChange={(event) => update(field, event.target.value)}
               />
-            </label>
+            </Field>
           ))}
           {DATE_FIELDS.map((field) => (
-            <label key={field} htmlFor={`filter-${field}`}>
-              <span>{t(`tickets.search.${field}`)}</span>
-              <input
-                id={`filter-${field}`}
+            <Field key={field} id={`filter-${field}`} label={t(`tickets.search.${field}`)}>
+              <Input
                 name={field}
                 type="date"
                 value={values[field]}
                 onChange={(event) => update(field, event.target.value)}
               />
-            </label>
+            </Field>
           ))}
         </div>
         <div className="ticket-search__actions">
-          <button type="submit">{t("tickets.search.submit")}</button>
-          <button type="button" onClick={onReset}>
+          <Button type="submit" variant="primary">
+            {t("tickets.search.submit")}
+          </Button>
+          <Button type="button" onClick={onReset}>
             {t("tickets.search.reset")}
-          </button>
+          </Button>
         </div>
       </fieldset>
     </form>
