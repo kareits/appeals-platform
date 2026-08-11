@@ -124,6 +124,21 @@ Execution order (ADR-005):
   read-only in UI.
 - Check: E2E "registration→decision→close" (placeholder status).
 
+### 01E-5 — Frontend: design system + UI polish
+- Services: web-frontend. Dependencies: 01E-4.
+- Data: —.
+- DoD-specific: replace the MVP styling of the EP-1 screens (login, appeal list/search,
+  registration form, appeal card) with a consistent visual design — layout, typography, spacing,
+  and shared components (buttons, inputs, selects, tables, status/priority badges, dialogs),
+  explicit loading/empty/error/forbidden states, responsive behavior, light/dark support, and
+  WCAG-AA accessibility. Presentation layer only: no API/contract, business-logic, authorization,
+  or localization-content changes (the ADR-015 user-facing text layer stays intact); later frontend
+  screens (02E-*, 05B/05C) reuse the same system. Requires a new ADR choosing the styling approach
+  (CSS tokens vs utility framework vs component library) that supersedes ADR-0009's deliberate
+  "minimal styling, no design system" scope.
+- Check: existing behavior/component tests stay green; an accessibility check (e.g. axe) passes on
+  the core screens; a manual run confirms the restyled screens and their states.
+
 ---
 
 ## EP-2 — Document Foundation (Origin: TASK_03A)
@@ -369,7 +384,7 @@ Execution order (ADR-005):
 | Origin TASK (chatgpt_docs) | Subtasks | EP |
 |---|---|---|
 | TASK_00_REPOSITORY_BOOTSTRAP | 00A, 00B, 00C, 00D | EP-0, EP-0F |
-| TASK_01_TICKET_AND_MANUAL_WORKFLOW | 01A, 01B, 01C, 01D, 01E-1..4 | EP-1 |
+| TASK_01_TICKET_AND_MANUAL_WORKFLOW | 01A, 01B, 01C, 01D, 01E-1..5 | EP-1 |
 | TASK_03_DOCUMENTS → **03A** (Foundation) | 03A-1, 03A-2 | EP-2 |
 | TASK_02_FLOWABLE_INTEGRATION | 02A, 02B-1..3, 02C-1..3, 02D, 02E-1..3 | EP-3 |
 | TASK_03_DOCUMENTS → **03B** (Hardening) | 03B-1, 03B-2, 03B-3 | EP-4 |

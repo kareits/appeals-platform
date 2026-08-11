@@ -87,7 +87,9 @@ These gates are established in EP-0 (TASK_00A/00C) and enforced from then on.
   from UUID); close validation; retention (`retention_until`, `legal_hold`); audit; SLA policy +
   business calendar (computing `internal_due_at`/`legal_due_at`); IAM dev-users/roles +
   authorization matrix; BFF (auth context, workspace aggregation, error normalization); frontend
-  (login, list/search, manual-registration form, card, comments, decision/close). User-facing
+  (login, list/search, manual-registration form, card, comments, decision/close) followed by a
+  design/UI-polish pass (01E-5) that applies a consistent visual design and accessibility over those
+  screens (presentation only; supersedes ADR-0009's minimal-styling scope via a new ADR). User-facing
   Russian/Kazakh text stays in the localization layer (ADR-015).
 - **API:** `GET/POST /tickets`, `GET /tickets/{id}/workspace`, `PATCH /tickets/{id}`,
   `POST /tickets/{id}/comments`; `/api/v1`, camelCase, RFC7807, `X-Correlation-ID`,
