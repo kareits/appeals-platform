@@ -43,6 +43,7 @@ from ticket_service.api.schemas import (
     PaginatedTickets,
     RecordDecisionRequest,
     ReferenceDataResponse,
+    TicketAccessResponse,
     TicketResponse,
     UpdateTicketRequest,
     comment_to_response,
@@ -241,6 +242,45 @@ async def get_ticket(
     async with _domain_errors():
         ticket = await use_cases.get_ticket(session, ticket_id, caller)
     return ticket_to_response(ticket)
+
+
+@router.get(
+    "/tickets/{ticket_id}/access",
+    response_model=TicketAccessResponse,
+    operation_id="getTicketAccess",
+)
+async def get_ticket_access(
+    ticket_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    caller: _RequireRead,
+) -> TicketAccessResponse:
+    """Report whether the caller may read and whether they may mutate this appeal.
+
+    Exposes this service's own data-scope decision so another service can enforce it without
+    duplicating the policy or reading this database (ADR-0008, ADR-004). The Document Service uses
+    ``canMutate`` before attaching or moving evidence, because inferring that right from a
+    successful read would let a controlled read/audit role lend its broad scope to a mutation
+    (CR-DOC-HIGH-002).
+
+    The probe has no side effects, writes no audit record, and discloses nothing beyond the
+    caller's own capabilities: an appeal outside their scope and one that does not exist both answer
+    ``false`` to everything.
+
+    Args:
+        ticket_id: The appeal to evaluate.
+        session: The database session.
+        caller: The authenticated caller (requires ticket:read; the data scope is the answer itself,
+            so it is not enforced as a gate here).
+
+    Returns:
+        The caller's read and mutation capabilities on this appeal.
+    """
+    decision = await use_cases.evaluate_ticket_access(session, ticket_id, caller)
+    return TicketAccessResponse(
+        ticket_id=decision.ticket_id,
+        can_read=decision.can_read,
+        can_mutate=decision.can_mutate,
+    )
 
 
 @router.get("/tickets", response_model=PaginatedTickets, operation_id="searchTickets")

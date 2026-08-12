@@ -50,4 +50,6 @@ def test_expected_operations_present() -> None:
         "addComment",
         "listComments",
         "listReferenceData",
+        # Read-only authorization probe consumed by the Document Service (CR-DOC-HIGH-002).
+        "getTicketAccess",
     } <= operation_ids

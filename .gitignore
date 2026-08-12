@@ -23,8 +23,9 @@ uv.lock.local
 .env.*
 !.env.example
 
-# Local code-review reports (kept out of version control)
-reviews/
+# Local document-service file storage (the default DOCUMENT_STORAGE_ROOT for non-Docker runs).
+# Stored objects are data, never source; in compose they live on the document-data volume.
+document-storage/
 
 # OS / editor
 .DS_Store

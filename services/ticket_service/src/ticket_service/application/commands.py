@@ -239,3 +239,24 @@ class TicketSearchQuery:
     registered_to: datetime | None = None
     page: int = 1
     page_size: int = 20
+
+
+@dataclass(frozen=True)
+class TicketAccessDecision:
+    """The caller's capabilities on one appeal, as decided by this service's data-scope policy.
+
+    Returned by the read-only access probe so another service can enforce this policy without
+    duplicating it (ADR-0008, CR-DOC-HIGH-002). Read and mutation are reported separately because
+    mutation scope is deliberately narrower: a controlled read/audit role must not lend its scope to
+    a mutation.
+
+    Attributes:
+        ticket_id: The appeal the decision applies to.
+        can_read: Whether the caller may read this appeal (false for an appeal they cannot see and
+            for one that does not exist, so the probe is not an existence oracle).
+        can_mutate: Whether the caller may modify this appeal and its attached record.
+    """
+
+    ticket_id: uuid.UUID
+    can_read: bool
+    can_mutate: bool

@@ -47,6 +47,7 @@ Bearer`), 403 without the permission or scope.
 | POST | `/api/v1/tickets/{id}/legal-hold` | Place or lift a legal hold | `ticket:legal_hold` |
 | POST | `/api/v1/tickets/{id}/comments` | Add a comment | `ticket:comment` |
 | GET | `/api/v1/tickets/{id}/comments` | List comments | `ticket:read` |
+| GET | `/api/v1/tickets/{id}/access` | Report the caller's own `canRead`/`canMutate` on this appeal (read-only decision export; see below) | `ticket:read` |
 | GET | `/api/v1/reference-data` | List active reference-dictionary entries (optional `types` filter) | `ticket:read` |
 
 ## Authentication and authorization
@@ -55,6 +56,16 @@ Independent JWT verification (`infrastructure/auth_tokens.py`) + permission gate
 (`api/dependencies.require_permission`) + object/data scope (`domain/authorization.py`, fail-closed
 EP-1 policy per ADR-0008). The actor for mutations/audit is the verified subject (`registered_by`,
 `decision_by`, comment author) — never client input. No IAM code import or IAM DB access (ADR-004).
+
+**Exported decision (`GET /api/v1/tickets/{id}/access`).** This service also publishes its own scope
+decision — `canRead` and the deliberately narrower `canMutate`, from the same
+`can_read_ticket`/`can_mutate_ticket` it enforces internally — so a service that owns related data can
+apply this policy without duplicating it or reading this database. The Document Service uses
+`canMutate` before attaching or moving evidence, because inferring that right from a successful read
+would let a controlled read/audit role lend its breadth to a mutation (ADR-0012, CR-DOC-HIGH-002). The
+probe requires `ticket:read`, has no side effects, writes no audit record, and answers `false`/`false`
+both for an appeal outside the caller's scope and for one that does not exist, so it never reveals
+whether an appeal exists.
 
 ## Emitted events
 

@@ -11,6 +11,8 @@ implementation (contract-first).
   the MVP event list, and the per-event documentation template (ADR-006 / ADR-0004).
 - [`openapi/ticket-service.v1.yaml`](openapi/ticket-service.v1.yaml) — the Ticket Service REST API
   (OpenAPI 3.1).
+- [`openapi/document-service.v1.yaml`](openapi/document-service.v1.yaml) — the Document Service REST
+  API (upload, metadata, download, listing, appeal linkage).
 - [`events/payloads/`](events/payloads/) — per-event payload schemas owned by the producing
   service (currently `ticket.created/classified/updated.v1`).
 - `tests/` — contract tests: envelope validity, ticket payload validity and envelope conformance,

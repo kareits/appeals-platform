@@ -22,6 +22,7 @@ members = [
     "services/ticket_service",
     "services/iam_service",
     "services/bff_service",
+    "services/document_service",
 ]
 
 [tool.uv.sources]
@@ -77,15 +78,17 @@ mypy_path = [
     "services/ticket_service/src",
     "services/iam_service/src",
     "services/bff_service/src",
+    "services/document_service/src",
 ]
 exclude = ['(^|/)migrations/']
 
 # Some tests share helpers via uniquely named modules in a tests directory (test dirs are not module
-# roots for mypy, unlike the per-service ``src``): ``bff_fakes`` for the BFF fakes and
-# ``pg_test_safety`` for the destructive-PostgreSQL target guard. The modules are still type-checked;
-# this only silences their cross-module import resolution.
+# roots for mypy, unlike the per-service ``src``): ``bff_fakes`` for the BFF fakes,
+# ``pg_test_safety`` for the destructive-PostgreSQL target guard, and ``document_test_support`` for
+# the document-service test builders. The modules are still type-checked; this only silences their
+# cross-module import resolution.
 [[tool.mypy.overrides]]
-module = ["bff_fakes", "pg_test_safety"]
+module = ["bff_fakes", "pg_test_safety", "document_test_support", "document_pg_safety"]
 ignore_missing_imports = true
 
 # --- interrogate: docstring coverage gate, target 100% for maintained code ---

@@ -104,6 +104,26 @@ ticket-postgres-idempotency:
       services/ticket_service/tests/test_migration_postgres.py
       -v
 
+document-postgres-concurrency:
+  stage: database
+  image: python:3.12-bookworm
+  services:
+    - name: postgres:16
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: document_service_test # Disposable DB; the destructive-test guard requires a *_test name.
+    ALLOW_DESTRUCTIVE_DATABASE_TESTS: "1" # Opt in explicitly, only against the *_test database.
+    DOCUMENT_TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/document_service_test"
+  before_script:
+    - pip install "uv==${UV_VERSION}"
+    - uv sync --all-packages --dev
+  script:
+    - >-
+      uv run pytest
+      services/document_service/tests/test_document_concurrency_postgres.py
+      -v
+
 # --- Docker Compose integration (Docker-in-Docker) ----------------------------------------------
 # FF_NETWORK_PER_BUILD lets the job reach the dind daemon and its published ports via "docker".
 
@@ -154,6 +174,23 @@ compose-smoke:
       echo "$idout"
       echo "$idout" | grep -q "uid=10001"
     - |
+      # Document Service acceptance path and security negatives. It publishes no host port, so the
+      # check runs from a throwaway container on the compose network.
+      docker run --rm --network appeals-platform_backend \
+        -v "$CI_PROJECT_DIR/infrastructure/smoke:/smoke:ro" python:3.12-slim \
+        python /smoke/document_e2e_smoke.py \
+        http://document_service:8000 http://iam_service:8000 http://ticket_service:8000
+    - |
+      # TASK_03A-1 acceptance: "restart does not lose files" — the document uploaded above must
+      # still be listed and downloadable byte-for-byte after the container is restarted.
+      docker compose -f "$COMPOSE_FILE" restart document_service
+      docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 120 document_service
+      docker run --rm --network appeals-platform_backend \
+        -v "$CI_PROJECT_DIR/infrastructure/smoke:/smoke:ro" python:3.12-slim \
+        python /smoke/document_e2e_smoke.py \
+        http://document_service:8000 http://iam_service:8000 http://ticket_service:8000 \
+        --verify-only
+    - |
       # Internal Ticket Service (no host port) must reject an unauthenticated request with 401.
       code=$(docker run --rm --network appeals-platform_backend curlimages/curl:8.10.1 \
         -s -o /dev/null -w "%{http_code}" \
@@ -175,8 +212,10 @@ compose-upgrade:
         psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
         -c "DROP DATABASE IF EXISTS ticket_service" \
         -c "DROP DATABASE IF EXISTS bff_service" \
+        -c "DROP DATABASE IF EXISTS document_service" \
         -c "DROP ROLE IF EXISTS ticket" \
-        -c "DROP ROLE IF EXISTS bff"
+        -c "DROP ROLE IF EXISTS bff" \
+        -c "DROP ROLE IF EXISTS document"
     - docker compose -f "$COMPOSE_FILE" up --build -d --wait --wait-timeout 300
     - curl -fsS http://docker:8080/health/live
     - curl -fsS http://docker:8080/health/ready

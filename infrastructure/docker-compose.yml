@@ -98,6 +98,7 @@ services:
       IAM_DB_PASSWORD: ${IAM_DB_PASSWORD:-iam}
       TICKET_DB_PASSWORD: ${TICKET_DB_PASSWORD:-ticket}
       BFF_DB_PASSWORD: ${BFF_DB_PASSWORD:-bff}
+      DOCUMENT_DB_PASSWORD: ${DOCUMENT_DB_PASSWORD:-document}
     volumes:
       - ./postgres/provision:/provision:ro
     depends_on:
@@ -127,9 +128,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    volumes:
-      # Placeholder persistent file volume for the future Document Service.
-      - file-data:/var/lib/appeals/files
     networks:
       - backend
 
@@ -308,6 +306,77 @@ services:
     networks:
       - backend
 
+  # One-shot migration job: brings the Document schema to head before the API starts, so API
+  # replicas never run migrations themselves and never serve an un-migrated database.
+  document_migrate:
+    build:
+      context: ..
+      dockerfile: services/document_service/Dockerfile
+    command: ["sh", "-c", "cd /app/services/document_service && alembic upgrade head"]
+    environment:
+      DOCUMENT_ENVIRONMENT: docker
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      DOCUMENT_DB_HOST: postgres
+      DOCUMENT_DB_USER: document
+      DOCUMENT_DB_NAME: document_service
+      DOCUMENT_DB_PASSWORD: ${DOCUMENT_DB_PASSWORD:-document}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db_provision:
+        condition: service_completed_successfully
+    restart: "no"
+    networks:
+      - backend
+
+  document_service:
+    build:
+      context: ..
+      dockerfile: services/document_service/Dockerfile
+    environment:
+      DOCUMENT_ENVIRONMENT: docker
+      # Discrete DB parts (not an embedded URL) so a URI-reserved char in the password is safe.
+      DOCUMENT_DB_HOST: postgres
+      DOCUMENT_DB_USER: document
+      DOCUMENT_DB_NAME: document_service
+      DOCUMENT_DB_PASSWORD: ${DOCUMENT_DB_PASSWORD:-document}
+      DOCUMENT_STORAGE_ROOT: /var/lib/appeals/files
+      # The document service verifies IAM-issued access tokens independently; the secret must match
+      # IAM's (dev/local scheme, docs/06). Never a real secret; production moves to OIDC (TASK_06).
+      DOCUMENT_JWT_SECRET: ${IAM_JWT_SECRET:-dev-insecure-secret-change-me-please}
+      # Object-level access is decided by the service that owns the appeal scope (ADR-0012): the
+      # document service asks Ticket, with the caller's own token, before serving or storing
+      # evidence. No credentials are configured here — the caller's token is forwarded per request.
+      DOCUMENT_TICKET_BASE_URL: http://ticket_service:8000
+    volumes:
+      # Persistent file storage: the acceptance criterion "restart does not lose files" depends on
+      # this volume outliving the container (ADR-014).
+      - document-data:/var/lib/appeals/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      document_migrate:
+        condition: service_completed_successfully
+      # Not a hard runtime requirement — an unreachable Ticket Service makes document requests fail
+      # closed with 503 rather than crash — but starting in order keeps the stack coherent.
+      ticket_service:
+        condition: service_healthy
+    healthcheck:
+      # Readiness (not liveness) so the container is healthy only once both its database and its
+      # storage volume are usable.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    # No published ports: reached only on the internal network (and via the BFF in a later task).
+    networks:
+      - backend
+
   process_adapter:
     build:
       context: ..
@@ -380,7 +449,9 @@ services:
 volumes:
   pgdata:
   rabbitmq-data:
-  file-data:
+  # Document Service file storage. Seeded from the image directory (owned by the service's
+  # unprivileged user) the first time it is created.
+  document-data:
 
 networks:
   backend:

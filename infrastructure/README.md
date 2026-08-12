@@ -12,10 +12,20 @@ Local development stack (TASK_00B, EP-0) defined in [`docker-compose.yml`](docke
 | `demo_service` | built from `services/demo_service/Dockerfile` | none | Reached only via the reverse proxy. |
 | `process_adapter` | built from `services/process_adapter/Dockerfile` | none | Adapter over Flowable (spike, TASK_00D); internal only. |
 | `web_frontend` | built from `apps/web-frontend/Dockerfile` | none | React + TypeScript SPA compiled to static assets and served by Caddy; reached only via the reverse proxy. |
+| `document_migrate` | built from `services/document_service/Dockerfile` | none | One-shot job: brings the Document schema to head before the API starts. |
+| `document_service` | built from `services/document_service/Dockerfile` | none | File boundary (TASK_03A-1); stores objects on the `document-data` volume; internal only. |
 | `reverse-proxy` | caddy:2.8 | `HTTP_PORT` (default 8080) → 80 | The only service that publishes a host port; routes `/api` and `/health` to the BFF and everything else to `web_frontend`. |
 
 Databases created on first init (see `postgres/init/01-create-databases.sh`): `demo_service`
-(owner `demo`) and `flowable` (owner `flowable`).
+(owner `demo`) and `flowable` (owner `flowable`). Every other service database and role is created
+(and its password reconciled) on **every** startup by the idempotent `db_provision` job
+(`postgres/provision/provision-databases.sh`), so an existing volume is brought up to date without
+being recreated.
+
+Named volumes: `pgdata` (PostgreSQL), `rabbitmq-data` (broker), and `document-data` (Document
+Service file storage, mounted at `/var/lib/appeals/files`). The document volume is what makes
+"restart does not lose files" true; it is seeded from the image directory owned by the service's
+unprivileged runtime user, so a fresh deployment needs no manual permission step.
 
 ## Run
 

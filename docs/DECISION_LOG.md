@@ -257,6 +257,59 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
   contrast, so the axe run excludes it and contrast is token-guaranteed and verified visually.
 - **Status:** accepted (TASK_01E-5). **Full ADR:** yes — [`docs/adr/ADR-0011-frontend-design-system.md`](adr/ADR-0011-frontend-design-system.md).
 
+## ADR-019. Document Service storage boundary, authorization, and download hardening
+
+- **Decision:** the Document Service is an **independent security boundary** (it verifies IAM tokens
+  itself, as the Ticket Service does under ADR-0008) and authorizes in two layers: the **existing
+  appeal permissions** — `ticket:read` for metadata/list/download and `ticket:update` for
+  upload/link — rather than `document:*` claims, and then an **object-level appeal-scope decision
+  delegated to the Ticket Service** over its public API with the **caller's own token**. Reads and
+  writes ask **different** questions: Ticket gains a read-only probe
+  `GET /api/v1/tickets/{ticketId}/access` → `{canRead, canMutate}` (its own
+  `can_read_ticket`/`can_mutate_ticket`), reads require `canRead`, and upload/link require
+  `canMutate` — so an audit role's organization-wide read scope can never be borrowed for an evidence
+  write (CR-DOC-HIGH-002). A decision is trusted only when it is **complete and bound to the appeal
+  that was asked about** (both booleans plus a matching `ticketId`); anything else — including a
+  partial or misrouted response — is **fail-closed 503** (CR-DOC-MEDIUM-004). An
+  unlinked document is visible to, and modifiable only by, its uploader. Linkage is a single conditional
+  `UPDATE` (write-once under concurrency), and the upload ceiling applies to **file bytes**, not to
+  multipart framing. Objects are addressed by a **random storage key**
+  (`YYYY/MM/<128 random bits>`, no extension) that is never derived from client input and never
+  exposed through the API; the client filename is sanitized and kept as display metadata only.
+  Downloads are **always untyped attachments** (`application/octet-stream`, `Content-Disposition:
+  attachment`, `nosniff`). Only the `AVAILABLE` status is downloadable, and the metadata row is
+  committed as `UPLOADING` **before** any byte is written. A configurable upload ceiling (25 MiB)
+  applies from the start. TASK_03A-1 emits **no** `document.*` events.
+- **Rationale:** the IAM matrix in force (ADR-0006/TASK_01D) defines no `document:*` permission, so
+  enforcing one would deny every real caller, while adding one would change an already-reviewed
+  service outside the phase's allowed scope; documents exist only as appeal evidence, so "may edit
+  this appeal" is the correct existing privilege. That permission is coarse, however, so it cannot be
+  the only check: the regulated team/assignment/confidentiality rules are the Ticket Service's data
+  and are already authoritative there (ADR-0008), so the object-level decision is **asked for**
+  rather than duplicated (which would drift) or skipped (which was an object-level authorization
+  bypass — CR-DOC-HIGH-001). The read/mutation split matters for the same reason: mutation scope is
+  narrower on purpose, so inferring a write right from a successful read recreates the composite-role
+  escalation Ticket blocks (CR-DOC-HIGH-002). Exporting the decision as a side-effect-free probe keeps
+  one source of truth; it required an additive Ticket endpoint, approved as a scope deviation for
+  EP-2. Random keys and sanitized filenames implement the
+  docs/06 attachment rules (random storage key, path-traversal protection). Attachment-only
+  downloads prevent stored evidence from executing in the platform's origin, because the recorded
+  content type is client-declared and unverified. The lifecycle gate exists now so TASK_03A-2 adds
+  scan states *behind* it instead of new logic on the serving path (docs/06: no access before CLEAN),
+  and metadata-before-bytes keeps storage reconcilable — an interrupted upload leaves a discoverable
+  row, never an untracked file.
+- **Consequences:** the service owns its database and a persistent volume (restart does not lose
+  files); `ticket_id`/`message_id` stay opaque UUIDs with no foreign key (ADR-004). The **Ticket
+  Service becomes a runtime dependency** of every document operation that names an appeal: when it is
+  unavailable, documents are unreadable (503) rather than open — the intended trade-off — with a
+  bounded timeout and the correlation ID carried across both services. No service credentials exist,
+  because the caller's own token is forwarded. Caching scope decisions must not be introduced without
+  an explicit decision (a stale allow is exactly the failure this closes). Dedicated `document:*`
+  permissions remain a follow-up with the IAM matrix revision; they refine the coarse first layer, not
+  the object-level decision. Hash, MIME allowlist, and antivirus scanning arrive in TASK_03A-2;
+  versions, preview, download audit, and soft delete in EP-4.
+- **Status:** accepted (TASK_03A-1). **Full ADR:** yes — [`docs/adr/ADR-0012-document-storage-boundary.md`](adr/ADR-0012-document-storage-boundary.md).
+
 ---
 
 ## ADRs to prepare at implementation time
@@ -273,6 +326,7 @@ case of conflict (see [DOCUMENT_PRECEDENCE.md](DOCUMENT_PRECEDENCE.md)).
 | ADR-0008 (ticket-authorization) | Ticket-service independent JWT verification, permission + fail-closed data-scope/confidentiality policy, and server-derived trusted actor | TASK_01E-1 (remediation) | Written |
 | ADR-0009 (web-frontend-foundation) | React+TS/Vite SPA (Node build-time only), gateway-only access, same-origin edge routing, sessionStorage auth forward-compatible with OIDC, TanStack Query + react-i18next | TASK_01E-2 | Written (minimal-styling scope superseded by ADR-0011) |
 | ADR-0011 (frontend-design-system) | Plain-CSS design tokens, shared component layer + accessible Dialog, light/dark/system theming via `data-theme`, WCAG-AA + axe check; supersedes ADR-0009's minimal-styling scope | TASK_01E-5 | Written |
+| ADR-0012 (document-storage-boundary) | Document Service as its own security boundary, appeal permissions + object-level scope delegated to Ticket (fail-closed 503), random storage keys + sanitized filenames, attachment-only downloads, `AVAILABLE`-only download gate, metadata-before-bytes, atomic write-once linkage | TASK_03A-1 | Written |
 | ADR-RESPONSE-LIFECYCLE | Response lifecycle draft→approve→send | TASK_02 / TASK_04 |
 | ADR-REPORTING-READ-MODEL | Reporting read-model in Ticket Service | TASK_05 |
 | ADR-STORAGE-MIGRATION | Dual-read and file migration to GridFS | TASK_03B | Pending |

@@ -409,6 +409,25 @@ class CommentResponse(ResponseModel):
     created_at: datetime
 
 
+class TicketAccessResponse(ResponseModel):
+    """The caller's capabilities on one appeal, as decided by this service's data-scope policy.
+
+    Read and mutation are reported separately because mutation scope is deliberately narrower: a
+    controlled read/audit role must not lend its broad scope to another role's mutation permission
+    (ADR-0008, CR-DOC-HIGH-002). Both flags are ``false`` for an appeal the caller cannot see
+    **and** for one that does not exist, so the probe never reveals whether an appeal exists.
+
+    Attributes:
+        ticket_id: The appeal the decision applies to.
+        can_read: Whether the caller may read this appeal.
+        can_mutate: Whether the caller may modify this appeal and its attached record.
+    """
+
+    ticket_id: uuid.UUID
+    can_read: bool
+    can_mutate: bool
+
+
 class ReferenceEntry(ResponseModel):
     """A single active reference-dictionary entry used to populate form controls.
 

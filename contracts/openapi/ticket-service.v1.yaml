@@ -150,6 +150,35 @@ paths:
           $ref: '#/components/responses/Problem'
         '422':
           $ref: '#/components/responses/Problem'
+  /tickets/{ticketId}/access:
+    parameters:
+      - $ref: '#/components/parameters/TicketId'
+    get:
+      tags: [tickets]
+      operationId: getTicketAccess
+      summary: Report the caller's capabilities on an appeal.
+      description: >-
+        Returns this service's own data-scope decision for the authenticated caller: whether they may
+        read the appeal and whether they may mutate it. Exposed so another service can enforce this
+        policy without duplicating it and without reading this database (ADR-0008, ADR-004) — the
+        Document Service checks canMutate before attaching or moving evidence, because inferring that
+        right from a successful read would let a controlled read/audit role lend its broad scope to a
+        mutation. The probe has no side effects and writes no audit record. An appeal outside the
+        caller's scope and an appeal that does not exist both answer false to everything, so the
+        response never reveals whether an appeal exists.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The caller's read and mutation capabilities on this appeal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketAccessResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
   /tickets/{ticketId}/classify:
     parameters:
       - $ref: '#/components/parameters/TicketId'
@@ -616,6 +645,18 @@ components:
         authorId: {type: string, format: uuid}
         body: {type: string}
         createdAt: {type: string, format: date-time}
+    TicketAccessResponse:
+      type: object
+      description: >-
+        The caller's capabilities on one appeal. Read and mutation are reported separately because
+        mutation scope is deliberately narrower than read scope (ADR-0008): ANALYST and AUDITOR have
+        organization-wide read but contribute no mutation scope, and AUDITOR may read a confidential
+        appeal but not modify it.
+      required: [ticketId, canRead, canMutate]
+      properties:
+        ticketId: {type: string, format: uuid, description: The appeal the decision applies to.}
+        canRead: {type: boolean, description: Whether the caller may read this appeal.}
+        canMutate: {type: boolean, description: Whether the caller may modify this appeal and its attached record.}
     Problem:
       type: object
       description: RFC 7807 Problem Details.

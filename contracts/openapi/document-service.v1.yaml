@@ -1,0 +1,339 @@
+openapi: 3.1.0
+info:
+  title: Document Service API
+  version: "1.0.0"
+  description: >-
+    File boundary of the MFO Appeals Platform: the only service that stores document bytes and
+    their metadata (root CLAUDE.md data ownership, ADR-014). Covers upload, metadata retrieval,
+    streamed download, per-ticket listing, and linking a document to a ticket (TASK_03A-1). Other
+    services and the frontend reference a document by its identifier only and never touch the
+    filesystem. Conventions (docs/05): base path /api/v1, JSON with camelCase fields, ISO-8601 UTC
+    timestamps, RFC 7807 Problem Details for errors, X-Correlation-ID propagation, cursorless
+    page/pageSize pagination. Access to a specific appeal's documents is decided by the Ticket
+    Service, which owns the appeal scope (team, assignment, confidentiality); a caller outside that
+    scope gets 403, and 503 when the decision cannot be obtained (never open access). Content
+    hashing, MIME allowlisting, and antivirus scanning are added in TASK_03A-2; versions, preview,
+    download audit, and soft delete in EP-4.
+servers:
+  - url: /api/v1
+    description: Versioned base path (mounted by the service).
+security:
+  - bearerAuth: []
+tags:
+  - name: documents
+    description: Document upload, metadata, download, listing, and ticket linkage.
+paths:
+  /documents:
+    post:
+      tags: [documents]
+      operationId: uploadDocument
+      summary: Upload a document.
+      description: >-
+        Streams an uploaded file to the configured storage backend and records its metadata. The
+        stored object is addressed by a random storage key; the original filename is sanitized and
+        kept as metadata only, so it never influences the storage path. The declared content type is
+        recorded but not trusted. A file exceeding the configured size limit yields 413 and no
+        metadata row usable for download; the limit applies to the file bytes, not to multipart
+        framing. Supplying ticketId links the document to an appeal immediately and requires access
+        to that appeal; otherwise the document starts unlinked and stays visible only to its uploader
+        until it is linked.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadDocumentRequest'
+            encoding:
+              file:
+                contentType: application/octet-stream
+      responses:
+        '201':
+          description: The document was stored.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '413':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '500':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+    get:
+      tags: [documents]
+      operationId: listTicketDocuments
+      summary: List the documents of an appeal.
+      description: >-
+        Returns the documents linked to a single appeal, newest first; requires access to that
+        appeal. Deleted documents are excluded. Documents that are not yet available (for example, a failed or in-flight upload)
+        are listed with their status so a caller can distinguish them from downloadable ones.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - {name: ticketId, in: query, required: true, schema: {type: string, format: uuid}, description: Appeal identifier the documents are linked to.}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}, description: 1-based page number.}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}, description: Page size.}
+      responses:
+        '200':
+          description: A page of documents linked to the appeal.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDocuments'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      tags: [documents]
+      operationId: getDocument
+      summary: Get document metadata by identifier.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The document metadata.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /documents/{documentId}/content:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    get:
+      tags: [documents]
+      operationId: downloadDocument
+      summary: Download the document content.
+      description: >-
+        Streams the stored bytes. Only a document in the AVAILABLE status can be downloaded; any
+        other status (in-flight, failed, or — from TASK_03A-2 — awaiting or failing an antivirus
+        scan) yields 409, and a deleted document yields 404. The response is always served as an
+        attachment with an application/octet-stream content type and X-Content-Type-Options nosniff,
+        so untrusted content is never rendered inline by a browser; safe preview is EP-4.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: The document content stream.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Content-Disposition:
+              schema: {type: string}
+              description: Always an attachment disposition carrying the sanitized original filename.
+            X-Content-Type-Options:
+              schema: {type: string}
+              description: Always "nosniff".
+          content:
+            application/octet-stream:
+              schema: {type: string, contentMediaType: application/octet-stream}
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '500':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+  /documents/{documentId}/link:
+    parameters:
+      - $ref: '#/components/parameters/DocumentId'
+    post:
+      tags: [documents]
+      operationId: linkDocument
+      summary: Link a document to an appeal.
+      description: >-
+        Attaches an unlinked document to an appeal, optionally recording the mail message it arrived
+        with. Linking is write-once evidence: re-linking a document that already belongs to another
+        appeal yields 409, while repeating the same link is idempotent and returns the unchanged
+        document; the transition is atomic, so two concurrent links to different appeals cannot both
+        succeed. The caller must have access to both the document and the destination appeal. The
+        Document Service never reads the Ticket Service database (root CLAUDE.md) — it asks it.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LinkDocumentRequest'
+      responses:
+        '200':
+          description: The document is linked to the appeal.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Signed access token issued by the IAM service. The document service verifies it
+        independently (signature, fixed algorithm allowlist, issuer, audience, expiry) and enforces
+        its own permission policy on every request, even when called directly (not via the BFF).
+        Reads require ticket:read and writes require ticket:update; dedicated document:* permissions
+        arrive with the IAM matrix revision. Missing/invalid tokens yield 401 with a
+        WWW-Authenticate: Bearer challenge; a missing permission yields 403. The permission gate is
+        only the first layer: object-level access is then decided per appeal by the Ticket Service
+        using the caller's own token (403 when denied, 503 when the decision is unavailable).
+  parameters:
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+      description: Internal document identifier (UUIDv7).
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema: {type: string}
+      description: Correlation identifier propagated across services; generated when absent.
+  headers:
+    CorrelationId:
+      schema: {type: string}
+      description: Correlation identifier for this request.
+  responses:
+    Problem:
+      description: An RFC 7807 Problem Details error.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    UploadDocumentRequest:
+      type: object
+      description: >-
+        Multipart upload of a single file with optional linkage metadata. Unrecognized parts are
+        ignored rather than rejected (multipart bodies are parsed part by part), so no
+        additionalProperties constraint is declared; note that no part can set a server-derived
+        field such as the uploader.
+      required: [file]
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          description: The file content.
+        ticketId: {type: [string, "null"], format: uuid, description: Appeal to link the document to; omit to upload unlinked.}
+        messageId: {type: [string, "null"], format: uuid, description: Mail message the document arrived with, when applicable.}
+        documentTypeCode: {type: [string, "null"], minLength: 1, maxLength: 64, description: Business document-type code.}
+    LinkDocumentRequest:
+      type: object
+      additionalProperties: false
+      description: Link an existing document to an appeal.
+      required: [ticketId]
+      properties:
+        ticketId: {type: string, format: uuid, description: Appeal identifier.}
+        messageId: {type: [string, "null"], format: uuid, description: Mail message the document arrived with, when applicable.}
+    DocumentResponse:
+      type: object
+      description: Document metadata. Content is retrieved separately through the download operation.
+      required:
+        [id, ticketId, messageId, originalFilename, storageBackend, contentType, sizeBytes,
+         documentTypeCode, version, status, createdBy, createdAt, deletedAt]
+      properties:
+        id: {type: string, format: uuid, description: Internal document identifier (UUIDv7).}
+        ticketId: {type: [string, "null"], format: uuid, description: Linked appeal, or null while unlinked.}
+        messageId: {type: [string, "null"], format: uuid, description: Mail message the document arrived with.}
+        originalFilename: {type: string, description: Sanitized original filename (never used as a storage path).}
+        storageBackend: {type: string, description: Storage backend holding the bytes (local in the MVP, ADR-014).}
+        contentType: {type: string, description: Content type declared at upload; recorded, not trusted.}
+        sizeBytes: {type: integer, description: Stored size in bytes.}
+        documentTypeCode: {type: [string, "null"], description: Business document-type code.}
+        version: {type: integer, description: Document version number (always 1 until EP-4 adds versions).}
+        status: {$ref: '#/components/schemas/DocumentStatus'}
+        createdBy: {type: string, format: uuid, description: Verified subject that uploaded the document.}
+        createdAt: {type: string, format: date-time, description: Upload timestamp (UTC).}
+        deletedAt: {type: [string, "null"], format: date-time, description: Soft-deletion timestamp (EP-4).}
+    DocumentStatus:
+      type: string
+      description: >-
+        Storage lifecycle state (DOCUMENT_SERVICE spec). TASK_03A-1 uses UPLOADING while bytes are
+        being written, AVAILABLE once they are stored, and UPLOAD_FAILED when writing failed.
+        PENDING_SCAN/CLEAN/INFECTED become reachable with the antivirus step in TASK_03A-2, and
+        DELETED with soft deletion in EP-4. Only AVAILABLE is downloadable.
+      enum: [UPLOADING, UPLOADED, PENDING_SCAN, CLEAN, AVAILABLE, INFECTED, UPLOAD_FAILED, DELETED]
+    PageMeta:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page: {type: integer, description: 1-based page number.}
+        pageSize: {type: integer, description: Page size.}
+        total: {type: integer, description: Total matching documents.}
+    PaginatedDocuments:
+      type: object
+      required: [items, page]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DocumentResponse'}
+        page: {$ref: '#/components/schemas/PageMeta'}
+    Problem:
+      type: object
+      description: RFC 7807 Problem Details.
+      required: [title, status]
+      properties:
+        type: {type: string, default: 'about:blank'}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: [string, "null"]}
+        instance: {type: [string, "null"]}

@@ -569,3 +569,123 @@ async def test_decision_actor_is_the_caller(
     )
     assert response.status_code == 200
     assert response.json()["decisionBy"] == str(subject)
+
+
+# --- Access probe: the exported decision must mirror the enforced one (CR-DOC-HIGH-002) ----------
+
+
+async def test_access_probe_reports_read_and_mutate_for_an_owner(
+    unauth_client: AsyncClient, make_token: Callable[..., str]
+) -> None:
+    """An employee who registered the appeal may both read and mutate it."""
+    subject = uuid.uuid4()
+    owner = _role_token(make_token, "EMPLOYEE", subject=subject)
+    created = await _create_as(unauth_client, owner)
+
+    response = await unauth_client.get(
+        f"/api/v1/tickets/{created['id']}/access", headers=_bearer(owner)
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ticketId": created["id"], "canRead": True, "canMutate": True}
+
+
+async def test_access_probe_separates_read_from_mutate_for_a_composite_role(
+    unauth_client: AsyncClient, make_token: Callable[..., str]
+) -> None:
+    """AUDITOR+EMPLOYEE may read a confidential appeal but must not be told it can mutate it.
+
+    This is the decision the Document Service consumes: if the probe reported a single "access" flag
+    derived from read scope, an audit role's breadth would silently authorize evidence mutations
+    (CR-DOC-HIGH-002).
+    """
+    supervisor = _role_token(make_token, "SUPERVISOR", subject=uuid.uuid4())
+    created = await _create_as(unauth_client, supervisor, isConfidential=True)
+    combo = _combo_token(make_token, ("AUDITOR", "EMPLOYEE"), subject=uuid.uuid4())
+
+    response = await unauth_client.get(
+        f"/api/v1/tickets/{created['id']}/access", headers=_bearer(combo)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["canRead"] is True
+    assert response.json()["canMutate"] is False
+    # The probe agrees with what the service actually enforces on a mutation.
+    mutated = await unauth_client.patch(
+        f"/api/v1/tickets/{created['id']}",
+        json={"expectedVersion": 1, "subject": "Tampered"},
+        headers=_bearer(combo),
+    )
+    assert mutated.status_code == 403
+
+
+async def test_access_probe_denies_another_teams_appeal(
+    unauth_client: AsyncClient, make_token: Callable[..., str]
+) -> None:
+    """An employee outside the appeal's scope is told they may neither read nor mutate it."""
+    owner = _role_token(make_token, "EMPLOYEE", subject=uuid.uuid4())
+    created = await _create_as(unauth_client, owner)
+    stranger = _role_token(make_token, "EMPLOYEE", subject=uuid.uuid4())
+
+    response = await unauth_client.get(
+        f"/api/v1/tickets/{created['id']}/access", headers=_bearer(stranger)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["canRead"] is False
+    assert response.json()["canMutate"] is False
+
+
+async def test_access_probe_is_not_an_existence_oracle(
+    unauth_client: AsyncClient, make_token: Callable[..., str]
+) -> None:
+    """An unknown appeal answers exactly like an out-of-scope one, so existence stays hidden."""
+    owner = _role_token(make_token, "EMPLOYEE", subject=uuid.uuid4())
+    created = await _create_as(unauth_client, owner)
+    stranger = _role_token(make_token, "EMPLOYEE", subject=uuid.uuid4())
+    unknown = uuid.uuid4()
+
+    out_of_scope = await unauth_client.get(
+        f"/api/v1/tickets/{created['id']}/access", headers=_bearer(stranger)
+    )
+    missing = await unauth_client.get(
+        f"/api/v1/tickets/{unknown}/access", headers=_bearer(stranger)
+    )
+
+    assert out_of_scope.status_code == missing.status_code == 200
+    assert missing.json() == {"ticketId": str(unknown), "canRead": False, "canMutate": False}
+    assert out_of_scope.json()["canRead"] == missing.json()["canRead"]
+
+
+async def test_access_probe_requires_authentication_and_permission(
+    unauth_client: AsyncClient, make_token: Callable[..., str]
+) -> None:
+    """The probe is not public: it needs a valid token and the ticket:read permission."""
+    ticket_id = uuid.uuid4()
+
+    anonymous = await unauth_client.get(f"/api/v1/tickets/{ticket_id}/access")
+    admin = await unauth_client.get(
+        f"/api/v1/tickets/{ticket_id}/access",
+        headers=_bearer(_role_token(make_token, "ADMIN", subject=uuid.uuid4())),
+    )
+
+    assert anonymous.status_code == 401
+    assert admin.status_code == 403
+
+
+async def test_access_probe_reports_read_only_for_first_line(
+    unauth_client: AsyncClient, make_token: Callable[..., str]
+) -> None:
+    """A read-only role is reported as read-only, matching the enforced policy."""
+    subject = uuid.uuid4()
+    owner = _role_token(make_token, "EMPLOYEE", subject=subject)
+    created = await _create_as(unauth_client, owner)
+    first_line = _role_token(make_token, "FIRST_LINE_READONLY", subject=subject)
+
+    response = await unauth_client.get(
+        f"/api/v1/tickets/{created['id']}/access", headers=_bearer(first_line)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["canRead"] is True
+    assert response.json()["canMutate"] is False

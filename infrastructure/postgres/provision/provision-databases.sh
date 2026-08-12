@@ -59,5 +59,6 @@ ensure_service flowable "${FLOWABLE_DB_PASSWORD:-flowable}" flowable
 ensure_service iam "${IAM_DB_PASSWORD:-iam}" iam_service
 ensure_service ticket "${TICKET_DB_PASSWORD:-ticket}" ticket_service
 ensure_service bff "${BFF_DB_PASSWORD:-bff}" bff_service
+ensure_service document "${DOCUMENT_DB_PASSWORD:-document}" document_service
 
 echo "database provisioning complete"

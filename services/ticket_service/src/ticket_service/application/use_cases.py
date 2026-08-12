@@ -27,6 +27,7 @@ from ticket_service.application.commands import (
     CreateTicketCommand,
     RecordDecisionCommand,
     SetLegalHoldCommand,
+    TicketAccessDecision,
     TicketSearchQuery,
     UpdateTicketCommand,
 )
@@ -603,6 +604,53 @@ async def get_ticket(session: AsyncSession, ticket_id: uuid.UUID, caller: Ticket
         raise TicketNotFoundError(str(ticket_id))
     _ensure_read(caller, ticket)
     return ticket
+
+
+async def evaluate_ticket_access(
+    session: AsyncSession, ticket_id: uuid.UUID, caller: TicketClaims
+) -> TicketAccessDecision:
+    """Report whether a caller may read and whether they may mutate a specific appeal.
+
+    This is the authorization decision itself, exposed so another service can enforce **this**
+    service's data-scope policy without duplicating it and without reading this database (ADR-004,
+    ADR-0008). The Document Service needs it because attaching or moving evidence is a mutation of
+    the appeal's record: inferring that right from a successful *read* would let a controlled
+    read/audit role (ANALYST, AUDITOR) lend its broad scope to another role's mutation permission —
+    exactly the composite escalation ``can_mutate_ticket`` exists to prevent (CR-DOC-HIGH-002,
+    CR-BFF-RR-HIGH-001).
+
+    A caller outside the appeal's scope and a caller naming an appeal that does not exist receive
+    the same answer (both decisions ``false``), so the probe is not an existence oracle. It has no
+    side effects and writes no audit record: it discloses nothing beyond the caller's own
+    capabilities.
+
+    Args:
+        session: The active session.
+        ticket_id: The appeal to evaluate.
+        caller: The authenticated caller whose scope is evaluated.
+
+    Returns:
+        The read and mutation decisions for this caller and appeal.
+    """
+    ticket = await TicketRepository(session).get(ticket_id)
+    if ticket is None:
+        return TicketAccessDecision(ticket_id=ticket_id, can_read=False, can_mutate=False)
+    context = _access_context(ticket)
+    return TicketAccessDecision(
+        ticket_id=ticket_id,
+        can_read=authorization.can_read_ticket(
+            subject=caller.subject,
+            role_names=caller.roles,
+            team_claims=caller.teams,
+            ticket=context,
+        ),
+        can_mutate=authorization.can_mutate_ticket(
+            subject=caller.subject,
+            role_names=caller.roles,
+            team_claims=caller.teams,
+            ticket=context,
+        ),
+    )
 
 
 async def add_comment(
