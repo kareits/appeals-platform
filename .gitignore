@@ -23,6 +23,11 @@ uv.lock.local
 .env.*
 !.env.example
 
+# Local code-review reports (kept out of version control). They document open security findings with
+# reproduction steps and quote the local stack's development credentials, so they are transferred
+# between working machines out of band rather than published with the repository.
+reviews/
+
 # Local document-service file storage (the default DOCUMENT_STORAGE_ROOT for non-Docker runs).
 # Stored objects are data, never source; in compose they live on the document-data volume.
 document-storage/
